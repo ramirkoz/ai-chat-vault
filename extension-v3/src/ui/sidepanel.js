@@ -232,7 +232,12 @@ async function exportFullZip(indices) {
 async function exportSelected() {
   const indices = selectedIndices();
   const format = nodes.format.value;
-  if (format === 'zip') return exportFullZip(indices);
+  if (format === 'zip') {
+    // File hosts (e.g. googleusercontent.com for Gemini) may still be missing;
+    // the request must be the first await of the click.
+    await chrome.permissions.request({ origins: platformFor(activeTab?.url)?.origins || [] }).catch(() => false);
+    return exportFullZip(indices);
+  }
   const content = format === 'json' ? toJson(conversation, indices) : format === 'html' ? toHtml(conversation, indices) : toMarkdown(conversation, indices);
   const type = format === 'json' ? 'application/json' : format === 'html' ? 'text/html' : 'text/markdown';
   await download(content, exportFilename(conversation, format), type);

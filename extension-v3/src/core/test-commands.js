@@ -4,7 +4,7 @@ import { buildHandoffPrompt } from './handoff.js';
 import { saveConversation, getRecord, deleteRecord, listRecords, recordKey } from './library.js';
 import { searchRecords, tokenize } from './search.js';
 import { toMarkdown, toHtml, toJson } from './export.js';
-import { platformFor, platformById } from '../platforms/index.js';
+import { platforms, platformFor, platformById } from '../platforms/index.js';
 import { isTestModeOn, testModeUntil } from './test-mode.js';
 
 // Structural summary only: no message text leaves the extension in test mode.
@@ -32,6 +32,14 @@ const extensionOf = (name) => (String(name).includes('.') ? String(name).split('
 const commands = {
   async ping() {
     return { version: chrome.runtime.getManifest().version, testModeUntil: new Date(await testModeUntil()).toISOString() };
+  },
+
+  async permissions() {
+    const result = {};
+    for (const platform of platforms) {
+      for (const origin of platform.origins) result[origin] = await chrome.permissions.contains({ origins: [origin] });
+    }
+    return result;
   },
 
   async read(tab, { refresh = true } = {}) {

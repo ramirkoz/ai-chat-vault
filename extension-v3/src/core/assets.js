@@ -124,8 +124,10 @@ export async function fetchInExtension(url) {
     const bytes = new Uint8Array(await blob.arrayBuffer());
     return { ok: true, bytes, crc: crc32Update(0, bytes), mime: blob.type, name: '' };
   } catch (error) {
-    // Most often: the host permission for the file host was not granted.
-    return { ok: false, error: String(error?.message || error) };
+    // Without host permission Chrome applies CORS and the fetch fails opaquely.
+    const origin = `${new URL(url).protocol}//*.${new URL(url).host.split('.').slice(-2).join('.')}/*`;
+    const granted = await chrome.permissions.contains({ origins: [origin] }).catch(() => true);
+    return { ok: false, error: granted ? String(error?.message || error) : `no access to ${origin.replace(/^https:\/\/\*\.|\/\*$/g, '')}; grant access in the side panel` };
   }
 }
 
