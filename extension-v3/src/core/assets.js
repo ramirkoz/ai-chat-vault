@@ -131,32 +131,70 @@ export async function fetchInExtension(url) {
   }
 }
 
-// Downloader bound to one chat tab; returns { ok, bytes, crc, mime, name } or { ok: false, error }.
-export function tabDownloader(tabId) {
+function waitForComplete(tabId, timeoutMs = 30000) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, timeoutMs);
+    function done() {
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    }
+    function listener(id, info) {
+      if (id === tabId && info.status === 'complete') done();
+    }
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+// Some file URLs need the site's cookies through a redirect (Gemini's /gg/ image
+// links), which a background fetch does not get. Opening the URL as a page does
+// (verified live), so the file is fetched from inside a short-lived inactive tab.
+async function fetchViaHelperTab(url) {
+  const tab = await chrome.tabs.create({ url, active: false });
+  try {
+    await waitForComplete(tab.id);
+    const final = await chrome.tabs.get(tab.id);
+    return await pullStaged(tab.id, { type: 'url', url: final.url || url });
+  } finally {
+    await chrome.tabs.remove(tab.id).catch(() => {});
+  }
+}
+
+async function pullStaged(tabId, source) {
   const run = async (func, args) => {
     const [result] = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func, args });
     return result?.result;
   };
+  const staged = await run(stageInPage, [source, MAX_FILE_BYTES]);
+  if (!staged?.ok) return { ok: false, error: staged?.error || 'no result' };
+  try {
+    const bytes = new Uint8Array(staged.size);
+    let crc = 0;
+    for (let start = 0; start < staged.size; start += CHUNK_BYTES) {
+      const end = Math.min(staged.size, start + CHUNK_BYTES);
+      const chunk = await run(readChunkInPage, [staged.key, start, end]);
+      if (!chunk?.ok) return { ok: false, error: chunk?.error || 'chunk failed' };
+      const written = base64Into(bytes, start, chunk.base64);
+      crc = crc32Update(crc, bytes.subarray(start, start + written));
+    }
+    return { ok: true, bytes, crc, mime: staged.mime, name: staged.name };
+  } finally {
+    await run(releaseInPage, [staged.key]).catch(() => {});
+  }
+}
+
+// Downloader bound to one chat tab; returns { ok, bytes, crc, mime, name } or { ok: false, error }.
+export function tabDownloader(tabId) {
   return async (source) => {
     // Hosts without CORS for the chat page (Gemini images) are fetched by the
-    // extension itself, which has host permission for them.
-    if (source.fetchFrom === 'extension') return fetchInExtension(source.url);
-    const staged = await run(stageInPage, [source, MAX_FILE_BYTES]);
-    if (!staged?.ok) return { ok: false, error: staged?.error || 'no result' };
-    try {
-      const bytes = new Uint8Array(staged.size);
-      let crc = 0;
-      for (let start = 0; start < staged.size; start += CHUNK_BYTES) {
-        const end = Math.min(staged.size, start + CHUNK_BYTES);
-        const chunk = await run(readChunkInPage, [staged.key, start, end]);
-        if (!chunk?.ok) return { ok: false, error: chunk?.error || 'chunk failed' };
-        const written = base64Into(bytes, start, chunk.base64);
-        crc = crc32Update(crc, bytes.subarray(start, start + written));
-      }
-      return { ok: true, bytes, crc, mime: staged.mime, name: staged.name };
-    } finally {
-      await run(releaseInPage, [staged.key]).catch(() => {});
+    // extension itself, falling back to a helper tab when cookies are required.
+    if (source.fetchFrom === 'extension') {
+      const direct = await fetchInExtension(source.url);
+      if (direct.ok || /^no access/.test(direct.error)) return direct;
+      const viaTab = await fetchViaHelperTab(source.url).catch((error) => ({ ok: false, error: String(error?.message || error) }));
+      return viaTab.ok ? viaTab : { ok: false, error: `${direct.error}; helper tab: ${viaTab.error}` };
     }
+    return pullStaged(tabId, source);
   };
 }
 
