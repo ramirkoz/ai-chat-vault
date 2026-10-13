@@ -95,7 +95,7 @@ test('Grok: active thread through response nodes', () => {
       { responseId: 'r2', sender: 'ASSISTANT', parentResponseId: 'q2' }
     ] },
     responses: { responses: [
-      { responseId: 'q1', sender: 'human', message: 'Hello', createTime: '2026-10-01T10:00:00Z' },
+      { responseId: 'q1', sender: 'human', message: 'Hello', createTime: '2026-10-01T10:00:00Z', fileAttachments: ['5f0c1d2e-0000-4000-8000-000000000001'], fileAttachmentsMetadata: [{ fileMetadataId: '5f0c1d2e-0000-4000-8000-000000000001', fileName: 'brief.pdf', fileMimeType: 'application/pdf' }] },
       { responseId: 'r1', sender: 'ASSISTANT', message: 'Hi!', createTime: '2026-10-01T10:00:01Z' },
       { responseId: 'q2', sender: 'human', message: 'More', createTime: '2026-10-01T10:00:02Z' },
       { responseId: 'r2', sender: 'ASSISTANT', message: 'Sure.', createTime: '2026-10-01T10:00:03Z' }
@@ -105,4 +105,6 @@ test('Grok: active thread through response nodes', () => {
   const result = grok.normalize(data, { id: 'g', url: 'https://grok.com/c/g' });
   assert.equal(result.title, 'Grok chat');
   assert.deepEqual(result.messages.map((m) => `${m.role}:${m.text}`), ['user:Hello', 'assistant:Hi!', 'user:More', 'assistant:Sure.']);
+  assert.equal(result.messages[0].markdown, 'Hello\n\n📎 brief.pdf');
+  assert.deepEqual(result.messages[0].attachments, [{ name: 'brief.pdf' }]);
 });

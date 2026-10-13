@@ -9,7 +9,7 @@ One local tool for ChatGPT, Claude, Gemini and Grok: read the open conversation,
 | ChatGPT | `/backend-api/conversation/{id}` | message units + scroll sweep | ✅ | API reader (2026-10-13) |
 | Claude | `/api/organizations/{org}/chat_conversations/{id}?tree=True&rendering_mode=messages` | user/response blocks + scroll sweep | ✅ | normalizer on 6 real chats (2–172 messages) |
 | Gemini | `batchexecute` RPC `hNvQHb` | `<user-query>` / `<model-response>` | ✅ | RPC + normalizer on 8 real chats |
-| Grok | `/rest/app-chat/conversations/{id}/…` | generic | ✅ | **not verified** (no signed-in account during development) |
+| Grok | `/rest/app-chat/conversations/{id}/response-node` + `load-responses` | user/assistant message bubbles | ✅ | endpoints, attachments and page markup on a real chat; the API publishes the newest answer a few seconds late, so a page/API mismatch is reported |
 
 ## Install (developer mode)
 
@@ -54,4 +54,4 @@ node --test tests/v3/platforms.test.mjs tests/v3/core.test.mjs
 
 - Full ZIP export with attachments (2.x feature) for the new platforms.
 - Automatic project memory (2.x auto-sync and first-message injection).
-- Grok live verification.
+- Grok long-thread and branch verification (only a short chat was available).

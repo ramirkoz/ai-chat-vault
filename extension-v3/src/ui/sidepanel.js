@@ -102,7 +102,8 @@ async function loadConversation({ refresh = false } = {}) {
     if (conversation.source === 'dom') {
       setStatus(nodes.status, t('readDom', { count: conversation.messages.length, reason: conversation.warning.replace(/^api:\s*/, '') }), 'warn');
     } else {
-      setStatus(nodes.status, t('readApi', { count: conversation.messages.length, platform: platform.label }), conversation.warning ? 'warn' : 'ok');
+      const read = t('readApi', { count: conversation.messages.length, platform: platform.label });
+      setStatus(nodes.status, conversation.warning ? `${read}. ${conversation.warning}` : read, conversation.warning ? 'warn' : 'ok');
     }
   } catch (error) {
     setStatus(nodes.status, t('readFailed', { reason: String(error?.message || error) }), 'error');

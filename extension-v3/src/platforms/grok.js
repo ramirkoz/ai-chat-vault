@@ -1,10 +1,9 @@
 import { cleanText, escapeUserMarkdown, finalizeConversation, toIso } from '../core/model.js';
 
-// Experimental: the grok.com endpoints below were not yet verified against a
-// signed-in account. The DOM reader is the fallback when they fail.
+// grok.com endpoints verified on a signed-in account on 2026-10-13 (a single short
+// chat, so long threads and branches are covered only by tests).
 export const id = 'grok';
 export const label = 'Grok';
-export const experimental = true;
 export const origins = ['https://grok.com/*'];
 export const newChatUrl = 'https://grok.com/';
 
@@ -22,11 +21,13 @@ export const composerSelectors = [
   'textarea'
 ];
 
+// Each message is a div[id^="response-"] holding one .message-bubble marked
+// data-testid="user-message" or "assistant-message" (verified 2026-10-13).
 export const dom = {
   root: 'main',
-  unit: '[data-testid="message-bubble"], .message-bubble',
-  userMarker: '',
-  body: '.response-content-markdown, .message-bubble, [class*="markdown"]',
+  unit: '[data-testid="user-message"], [data-testid="assistant-message"]',
+  userMarker: '[data-testid="user-message"]',
+  body: '',
   strip: 'button, .sr-only'
 };
 
@@ -74,15 +75,23 @@ export function normalize(data, page = {}) {
   const messages = activeThread(data).map((item) => {
     const role = /human|user/i.test(String(item.sender || '')) ? 'user' : 'assistant';
     const text = cleanText(item.message || item.query || '');
+    // fileAttachments holds ids; the names are in the metadata arrays.
+    const metadata = Array.isArray(item.fileAttachmentsMetadata) && item.fileAttachmentsMetadata.length
+      ? item.fileAttachmentsMetadata.map((file) => file?.fileName)
+      : (Array.isArray(item.fileAttachmentAssetMetadata) ? item.fileAttachmentAssetMetadata : []).map((file) => file?.name);
+    const attachments = metadata.map((name) => ({ name: cleanText(name || '') })).filter((file) => file.name);
+    const images = (Array.isArray(item.generatedImageUrls) ? item.generatedImageUrls : []).length;
+    const markdown = [
+      role === 'user' ? escapeUserMarkdown(text) : text,
+      [...attachments.map((file) => `📎 ${file.name}`), ...Array(images).fill('🖼 [Image]')].join('\n')
+    ].filter(Boolean).join('\n\n');
     return {
       role,
       ids: [String(item.responseId || '')],
       text,
-      markdown: role === 'user' ? escapeUserMarkdown(text) : text,
+      markdown,
       createdAt: toIso(item.createTime),
-      attachments: (Array.isArray(item.fileAttachments) ? item.fileAttachments : [])
-        .map((file) => ({ name: cleanText(file?.fileName || file?.name || '') }))
-        .filter((file) => file.name)
+      attachments
     };
   });
   const meta = data?.meta?.conversation || data?.meta || {};
