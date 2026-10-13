@@ -128,4 +128,4 @@ jobs:
           unzip -t /tmp/workspace-v2.zip
           unzip -Z1 /tmp/workspace-v2.zip | grep -qx 'library.json'
           unzip -Z1 /tmp/workspace-v2.zip | grep -qx 'README.txt'
-          unzip -Z1 /tmp/workspace-v2.zip | grep -q '^chats/.*/.*\.md$'
+          unzip -Z1 /tmp/workspace-v2.zip | grep -q '^projects/.*/.*\.md$'
