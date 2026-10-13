@@ -511,7 +511,7 @@
 
   async function composerDraft() {
     if(!Number.isInteger(activeTabId))return'';
-    try{const runs=await chrome.scripting.executeScript({target:{tabId:activeTabId},func:()=>{const editor=document.querySelector('#prompt-textarea,[contenteditable="true"][data-lexical-editor="true"],textarea');return String(editor?.innerText||editor?.textContent||editor?.value||'').trim();}});return String(runs?.[0]?.result||'').trim();}catch{return'';}
+    try{const runs=await chrome.scripting.executeScript({target:{tabId:activeTabId},func:()=>{const editor=document.querySelector('#prompt-textarea,[contenteditable="true"][data-composer-markdown],[contenteditable="true"][data-lexical-editor="true"],[contenteditable="true"][role="textbox"],textarea');return String(editor?.innerText||editor?.textContent||editor?.value||'').trim();}});return String(runs?.[0]?.result||'').trim();}catch{return'';}
   }
 
   const tokens=(value)=>[...new Set(searchNormalize(value).match(/[\p{L}\p{N}_-]{2,}/gu)||[])].slice(0,40);
@@ -533,7 +533,7 @@
     const project=normalize(nodes.project.value || currentRecord()?.project || currentProjectContext.project || 'Workspace'); let used=0;const sections=[];
     for(const hit of memoryHits){const heading=`Source: ${hit.record.title} (${hit.record.updatedAt.slice(0,10)})`;const section=`${heading}\n${hit.chunk}`;if(used+section.length>MEMORY_CONTEXT_LIMIT)break;sections.push(section);used+=section.length;}
     const block=[`[LOCAL PROJECT MEMORY: ${project}]`,'This context was retrieved locally from saved project chats. It is not a ChatGPT Project source and may be stale.','',...sections.flatMap((s)=>[s,'','---','']),'[/LOCAL PROJECT MEMORY]'].join('\n');
-    const runs=await chrome.scripting.executeScript({target:{tabId:activeTabId},args:[block],func:(memoryBlock)=>{const editor=document.querySelector('#prompt-textarea,[contenteditable="true"][data-lexical-editor="true"],textarea');if(!editor)return false;const existing=String(editor.innerText||editor.textContent||editor.value||'').trim();const value=`${memoryBlock}\n\n${existing}`.trim();editor.focus();if('value'in editor){editor.value=value;editor.dispatchEvent(new Event('input',{bubbles:true}));}else{editor.textContent=value;editor.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:null}));}return true;}});
+    const runs=await chrome.scripting.executeScript({target:{tabId:activeTabId},args:[block],func:(memoryBlock)=>{const editor=document.querySelector('#prompt-textarea,[contenteditable="true"][data-composer-markdown],[contenteditable="true"][data-lexical-editor="true"],[contenteditable="true"][role="textbox"],textarea');if(!editor)return false;const existing=String(editor.innerText||editor.textContent||editor.value||'').trim();const value=`${memoryBlock}\n\n${existing}`.trim();editor.focus();if('value'in editor){editor.value=value;editor.dispatchEvent(new Event('input',{bubbles:true}));}else{let inserted=false;try{const selection=getSelection();const range=document.createRange();range.selectNodeContents(editor);selection.removeAllRanges();selection.addRange(range);inserted=document.execCommand('insertText',false,value);selection.removeAllRanges();}catch(_){}if(!inserted)editor.textContent=value;editor.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:null}));}return true;}});
     if(!runs?.[0]?.result)throw new Error('ChatGPT composer was not found.'); nodes.memoryStatus.textContent=t.memoryInserted;
   }
 

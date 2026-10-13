@@ -12,7 +12,8 @@
       index: messageIndex,
       total: Array.isArray(messages) ? messages.length : 0,
       role: record?.role || '',
-      preview: record?.preview || ''
+      preview: record?.preview || '',
+      messageIds: Array.isArray(record?.messageIds) ? record.messageIds : []
     };
   }
 
@@ -32,6 +33,12 @@
     const preview = normalize(descriptor.preview).replace(/…$/u, '').trim();
     const previewLong = preview.slice(0, 96);
     const previewShort = preview.slice(0, 36);
+    const messageIds = Array.isArray(descriptor.messageIds) ? descriptor.messageIds.map(String).filter(Boolean) : [];
+    const isVisible = (element) => Boolean(element && element.getClientRects().length && element.offsetHeight > 0);
+    // 2.33.0 UI: messages are [data-chatgpt-search-unit-key] units inside the visible
+    // [data-chatgpt-conversation-selection-target]; hidden copies of previously opened
+    // chats stay mounted and must be ignored.
+    const activeThread = () => [...document.querySelectorAll('[data-chatgpt-conversation-selection-target]')].filter(isVisible).pop() || null;
 
     function restoreHighlight(element) {
       if (!(element instanceof HTMLElement)) return;
@@ -50,6 +57,14 @@
     }
 
     function conversationRoots() {
+      const thread = activeThread();
+      if (thread) {
+        const units = [...thread.querySelectorAll('[data-chatgpt-search-unit-key]')]
+          .filter((unit) => !unit.parentElement?.closest('[data-chatgpt-search-unit-key]'))
+          .filter((unit) => normalize(unit.innerText || unit.textContent));
+        if (units.length) return units;
+      }
+
       const selectors = [
         '[data-testid^="conversation-turn-"]',
         '[data-message-id]',
@@ -65,7 +80,7 @@
         const root = candidate.matches(selector)
           ? candidate
           : candidate.closest(selector) || candidate;
-        if (!(root instanceof HTMLElement) || seen.has(root)) return;
+        if (!(root instanceof HTMLElement) || seen.has(root) || !isVisible(root)) return;
         const text = normalize(root.innerText || root.textContent);
         if (!text) return;
         seen.add(root);
@@ -89,7 +104,24 @@
     }
 
     function roleFor(root) {
+      const unitKey = String(root.getAttribute('data-chatgpt-search-unit-key') || '');
+      const fromKey = unitKey.match(/:(user|assistant)$/i)?.[1];
+      if (fromKey) return fromKey.toLowerCase();
+      if (root.querySelector('[data-user-message-bubble="true"]')) return 'user';
       return normalize(root.querySelector('[data-message-author-role]')?.getAttribute('data-message-author-role'));
+    }
+
+    function findById(roots) {
+      if (!messageIds.length) return null;
+      const wanted = new Set(messageIds);
+      return roots.find((root) => {
+        const ids = [
+          ...String(root.getAttribute('data-chatgpt-search-message-ids') || '').split(/\s+/),
+          root.getAttribute('data-message-id') || '',
+          ...[...root.querySelectorAll('[data-message-id]')].map((node) => node.getAttribute('data-message-id') || '')
+        ];
+        return ids.some((id) => id && wanted.has(id));
+      }) || null;
     }
 
     function scoreRoot(root, position) {
@@ -125,6 +157,8 @@
 
     function findTarget() {
       const roots = conversationRoots();
+      const exact = findById(roots);
+      if (exact) return { target: exact, roots, strategy: 'message-id' };
       let best = null;
       let bestScore = -Infinity;
 
@@ -142,7 +176,7 @@
     }
 
     function scrollContainer() {
-      const anchor = document.querySelector('[data-message-author-role]') || document.querySelector('main') || document.body;
+      const anchor = activeThread() || document.querySelector('[data-message-author-role]') || document.querySelector('main') || document.body;
       const candidates = [document.scrollingElement];
       let current = anchor;
 

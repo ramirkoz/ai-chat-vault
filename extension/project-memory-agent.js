@@ -34,7 +34,11 @@
     return {projectId,projectName,projectNameConfidence,url,links};
   };
 
-  const signature=()=>{const turns=document.querySelectorAll('[data-message-author-role]');const last=turns[turns.length-1];const tail=String(last?.textContent || '').replace(/\s+/g,' ').trim().slice(-800);return `${location.href}|${turns.length}|${tail}`;};
+  // 2.33.0 UI: message units live in the visible selection target; hidden copies of
+  // previously opened chats stay mounted and must not count as turns.
+  const isShown=(element)=>Boolean(element&&element.getClientRects().length&&element.offsetHeight>0);
+  const messageUnits=()=>{const thread=[...document.querySelectorAll('[data-chatgpt-conversation-selection-target]')].filter(isShown).pop();const units=thread?[...thread.querySelectorAll('[data-chatgpt-search-unit-key]')]:[];return units.length?units:[...document.querySelectorAll('main [data-message-author-role="user"],main [data-message-author-role="assistant"]')].filter(isShown);};
+  const signature=()=>{const turns=messageUnits();const last=turns[turns.length-1];const tail=String(last?.textContent || '').replace(/\s+/g,' ').trim().slice(-800);return `${location.href}|${turns.length}|${tail}`;};
 
   const dispatchProjectSync=async(context,{force=false}={})=>{
     if(!context?.projectId)return;
@@ -50,9 +54,9 @@
 
   const startProjectSyncNow=()=>{const context=projectContext();if(context.projectId)void dispatchProjectSync(context,{force:true});};
 
-  function composer(){return document.querySelector('#prompt-textarea,[contenteditable="true"][data-lexical-editor="true"],[contenteditable="true"][role="textbox"],textarea');}
+  function composer(){return document.querySelector('#prompt-textarea,[contenteditable="true"][data-composer-markdown],[contenteditable="true"][data-lexical-editor="true"],[contenteditable="true"][role="textbox"],textarea');}
   function composerText(editor=composer()){return clean(editor?.value ?? editor?.innerText ?? editor?.textContent ?? '');}
-  function visibleTurns(){return document.querySelectorAll('main [data-message-author-role="user"],main [data-message-author-role="assistant"]').length;}
+  function visibleTurns(){return messageUnits().length || (/\/c\/[a-z0-9-]{8,}/i.test(location.pathname)?1:0);}
   function isSendButton(node){const button=node?.closest?.('button');if(!button)return null;const descriptor=`${button.getAttribute('data-testid') || ''} ${button.getAttribute('aria-label') || ''} ${button.getAttribute('title') || ''}`;return /send-button|send message|send prompt|надісл|відправ|отправ/i.test(descriptor)?button:null;}
   function findSendButton(){return [...document.querySelectorAll('button')].find((button)=>isSendButton(button)===button && !button.disabled) || null;}
   function currentConversationKey(context){const conversationId=location.pathname.match(/\/c\/([a-z0-9-]{8,})/i)?.[1] || '';return conversationId?`${context.projectId}|${conversationId}`:`${context.projectId}|new|${navigationGeneration}`;}

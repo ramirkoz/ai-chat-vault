@@ -320,6 +320,12 @@
   "wrongPageError": {
     "message": "Спочатку відкрийте розмову ChatGPT."
   },
+  "partialThreadWarning": {
+    "message": "ChatGPT API недоступне ($REASON$), тому повідомлення зчитано зі сторінки — розмова може бути неповною.",
+    "placeholders": {
+      "reason": { "content": "$1" }
+    }
+  },
   "noMessagesError": {
     "message": "У відкритій розмові не знайдено повідомлень."
   },

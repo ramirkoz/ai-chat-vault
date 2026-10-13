@@ -4,7 +4,7 @@ Privacy-first Chrome extension for local ChatGPT Project memory, conversation ex
 
 ## Current release
 
-**2.32.1** — current tested release for the existing Chrome Web Store item.
+**2.33.0** — fixes conversation reading on the September 2026 ChatGPT UI (previously only one "message" was found).
 
 Chrome Web Store extension ID: `ingagbhapppiiiccljbhiledobnmhhfb`
 
@@ -20,16 +20,21 @@ Chrome Web Store extension ID: `ingagbhapppiiiccljbhiledobnmhhfb`
 - Local prompt library, saved-chat workspace, search, folders, tags, notes, and backups.
 - No developer telemetry or remote executable code.
 
-## 2.32.1 test status
+## How the conversation is read (2.33.0)
 
-- Local automated validation: PASS.
-- JavaScript syntax: **49/49 PASS**.
-- Real control export: **9 files added / 0 skipped**.
-- Large MP4 capture (~104.8 MB): PASS.
-- Large PPTX capture (~17.9 MB): PASS.
-- Content deduplication: PASS.
-- ZIP integrity: PASS.
-- Chrome Web Store manifest description compliance: PASS.
+1. **ChatGPT conversation API** in the user's own session (`/backend-api/conversation/{id}`), active branch only, grouped into user/assistant turns like the UI. Tool calls, tool output and hidden reasoning are not exported as text.
+2. **Page fallback** when the API is unavailable (for example HTTP 429): the visible thread is swept top to bottom and read from `[data-chatgpt-search-unit-key]` units. The side panel shows a warning in this case.
+3. **Legacy page reader** for accounts that still receive the pre-September 2026 markup.
+
+## 2.33.0 test status
+
+- Reader regression test (`tests/thread-reader.test.mjs`): PASS; fails on 2.32.1 as expected.
+- JavaScript syntax of all extension scripts: PASS (CI workflow `validate-thread-reader.yml`).
+- Live check on chatgpt.com, 2026-10-13, a real agentic project conversation (717 API nodes, 310 user/assistant API messages):
+  - 2.32.1 reader: **1** message (whole page text).
+  - 2.33.0 API reader: **18** turns (9 user / 9 assistant), no leftover citation markers, attachment and `sandbox:` file links preserved.
+  - 2.33.0 page fallback without scrolling: 8 mounted messages in correct order; hidden cached threads ignored.
+- Not yet verified live: page fallback scroll sweep, Full ZIP with attachments, message navigation, automatic memory injection. See `docs/GPT-Project-Memory-Tools-2.33.0-TEST-REPORT.md`.
 
 ## Install from source
 

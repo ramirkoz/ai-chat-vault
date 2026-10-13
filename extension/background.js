@@ -43,7 +43,9 @@ async function inspectThread(tabId) {
   return {
     title: result.title,
     messageCount: result.messageCount,
-    messages: result.messages
+    messages: result.messages,
+    source: result.source || '',
+    warning: result.warning || ''
   };
 }
 
@@ -125,7 +127,7 @@ async function readThread(tabId, options) {
   return runs?.[0]?.result;
 }
 
-function extractThread(options = {}) {
+async function extractThread(options = {}) {
   try {
     const cleanText = (value) => String(value || '')
       .replace(/\u00a0/g, ' ')
@@ -410,63 +412,393 @@ function extractThread(options = {}) {
       return value;
     };
 
-    const title = cleanText(
+    // 2.33.0: the conversation is read from ChatGPT's own conversation API first.
+    // Since the September 2026 UI the thread is virtualized (only a few turns are
+    // mounted) and the legacy article/[data-message-author-role] markup is gone, so
+    // DOM scraping can no longer see the whole conversation.
+    const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+    const isVisible = (element) => Boolean(element && element.getClientRects().length && element.offsetHeight > 0);
+    const conversationId = location.pathname.match(/\/c\/([a-z0-9-]{8,})/i)?.[1] || '';
+    const CACHE_TTL_MS = 90 * 1000;
+
+    const domTitle = cleanText(
       document.querySelector('main h1')?.innerText ||
-      document.querySelector('h1')?.innerText ||
       document.title.replace(/\s*[-–|]\s*ChatGPT.*$/i, '') ||
-      'ChatGPT conversation'
+      ''
     );
 
-    const main = document.querySelector('main') || document.body;
-    const turns = [];
-    const seen = new Set();
-
-    const addTurn = (root, role) => {
-      const body = root.querySelector(
-        '.markdown, [class*="markdown"], [class*="prose"], [class*="whitespace-pre-wrap"]'
-      ) || root;
-      const text = cleanText(body.innerText || body.textContent);
-      if (!text) return;
-      const markdown = normalizeMarkdown(nodeToMarkdown(body)) || escapeMultiline(text);
-      turns.push({ role, text, markdown });
+    const sessionHeaders = async () => {
+      const headers = { accept: 'application/json' };
+      try {
+        const response = await fetch('/api/auth/session', { credentials: 'include', cache: 'no-store', headers: { accept: 'application/json' } });
+        if (!response.ok) return headers;
+        const session = await response.json();
+        const token = String(session?.accessToken || '');
+        if (!token) return headers;
+        headers.authorization = `Bearer ${token}`;
+        let accountId = String(session?.account?.id || session?.user?.account_id || session?.user?.accountId || '');
+        if (!accountId) {
+          try {
+            const payload = token.split('.')[1] || '';
+            const json = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(payload.length / 4) * 4, '=')));
+            accountId = String(json?.['https://api.openai.com/auth']?.chatgpt_account_id || json?.chatgpt_account_id || '');
+          } catch (_) {}
+        }
+        if (accountId) headers['chatgpt-account-id'] = accountId;
+      } catch (_) {}
+      return headers;
     };
 
-    const roleNodes = [...main.querySelectorAll('[data-message-author-role]')];
-    for (const roleNode of roleNodes) {
-      const root = roleNode.closest(
-        'article, [data-testid^="conversation-turn-"], [data-message-id], [class*="group/conversation-turn"]'
-      ) || roleNode;
-      if (seen.has(root)) continue;
-      seen.add(root);
-      addTurn(root, roleNode.getAttribute('data-message-author-role') || 'unknown');
-    }
+    const fetchConversation = async () => {
+      const cache = globalThis.__gptpmConversationCache;
+      if (cache && cache.id === conversationId && Date.now() - cache.at < CACHE_TTL_MS && !options.refresh) {
+        return { data: cache.data };
+      }
+      const headers = await sessionHeaders();
+      let lastStatus = 0;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const response = await fetch(`/backend-api/conversation/${encodeURIComponent(conversationId)}`, {
+          credentials: 'include',
+          cache: 'no-store',
+          headers
+        });
+        lastStatus = response.status;
+        if (response.ok) {
+          const data = await response.json();
+          globalThis.__gptpmConversationCache = { id: conversationId, at: Date.now(), data };
+          return { data };
+        }
+        if (response.status !== 429 || attempt) break;
+        const retryAfter = Number(response.headers.get('retry-after'));
+        await wait(Math.min(8000, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 3000));
+      }
+      return { error: `HTTP ${lastStatus || 'error'}` };
+    };
 
-    if (!turns.length) {
-      const candidates = [...main.querySelectorAll(
-        '[data-testid^="conversation-turn-"], [data-message-id], article, [class*="group/conversation-turn"]'
-      )];
-      candidates.forEach((root, index) => {
-        if (seen.has(root)) return;
+    const branchMessages = (data) => {
+      const mapping = data?.mapping && typeof data.mapping === 'object' ? data.mapping : {};
+      const chain = [];
+      const guard = new Set();
+      let nodeId = data?.current_node;
+      while (nodeId && mapping[nodeId] && !guard.has(nodeId)) {
+        guard.add(nodeId);
+        if (mapping[nodeId].message) chain.unshift(mapping[nodeId].message);
+        nodeId = mapping[nodeId].parent;
+      }
+      if (chain.length) return chain;
+      return Object.values(mapping)
+        .map((node) => node?.message)
+        .filter(Boolean)
+        .sort((a, b) => Number(a?.create_time || 0) - Number(b?.create_time || 0));
+    };
+
+    // Inline citation markers (…) are replaced by their markdown
+    // alternative from content_references, or removed when none exists.
+    const applyContentReferences = (value, message) => {
+      let text = String(value || '');
+      const references = Array.isArray(message?.metadata?.content_references) ? message.metadata.content_references : [];
+      references
+        .filter((reference) => typeof reference?.matched_text === 'string' && reference.matched_text)
+        .sort((a, b) => Number(b?.start_idx || 0) - Number(a?.start_idx || 0))
+        .forEach((reference) => {
+          const replacement = typeof reference.alt === 'string' ? reference.alt : '';
+          text = text.split(reference.matched_text).join(replacement);
+        });
+      return text
+        .replace(/[^]*/g, '')
+        .replace(/[-]/g, '')
+        .replace(/【\d+(?::\d+)?†[^】]*】/g, '')
+        .replace(/[ \t]+\n/g, '\n')
+        .trim();
+    };
+
+    const attachmentNames = (message) => (Array.isArray(message?.metadata?.attachments) ? message.metadata.attachments : [])
+      .map((item) => cleanText(item?.name || item?.file_name || ''))
+      .filter(Boolean);
+
+    const imageParts = (message) => (Array.isArray(message?.content?.parts) ? message.content.parts : [])
+      .filter((part) => part && typeof part === 'object' && part.content_type === 'image_asset_pointer').length;
+
+    const stringParts = (message) => (Array.isArray(message?.content?.parts) ? message.content.parts : [])
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object' && part.content_type === 'audio_transcription' && typeof part.text === 'string') return part.text;
+        return '';
+      })
+      .filter((part) => part.trim())
+      .join('\n\n');
+
+    const canvasMarkdown = (message) => {
+      if (!/^canmore\.create_textdoc$/i.test(String(message?.recipient || ''))) return '';
+      try {
+        const doc = JSON.parse(String(message?.content?.text || ''));
+        const body = String(doc?.content || '').trim();
+        if (!body) return '';
+        const name = cleanText(doc?.name || 'Canvas');
+        const language = String(doc?.type || '').match(/^code\/([a-z0-9_+.-]+)/i)?.[1] || '';
+        return language
+          ? `### ${escapeInline(name)}\n\n${codeFence(body, language.toLowerCase()).trim()}`
+          : `### ${escapeInline(name)}\n\n${body}`;
+      } catch (_) {
+        return '';
+      }
+    };
+
+    const isHiddenContext = (message) => {
+      const type = String(message?.content?.content_type || '');
+      return Boolean(message?.metadata?.is_visually_hidden_from_conversation) ||
+        type === 'user_editable_context' ||
+        type === 'model_editable_context';
+    };
+
+    // One user message is one turn; everything until the next user message
+    // (assistant text, tool calls, tool output, reasoning) is one assistant turn,
+    // matching what the ChatGPT UI shows. Tool calls and hidden reasoning are not
+    // exported as text, but their message ids stay bound to the turn so attachments
+    // they produced are still attributed correctly.
+    const turnsFromConversation = (data) => {
+      const result = [];
+      let assistantTurn = null;
+      for (const message of branchMessages(data)) {
+        const role = String(message?.author?.role || '');
+        const id = String(message?.id || '');
+        if (role === 'system') continue;
+
+        if (role === 'user') {
+          if (isHiddenContext(message)) continue;
+          assistantTurn = null;
+          const text = cleanText(stringParts(message));
+          const files = attachmentNames(message);
+          const images = imageParts(message);
+          const extras = [
+            ...files.map((name) => `📎 ${escapeInline(name)}`),
+            ...(images > files.length ? Array(images - files.length).fill('🖼 [Image]') : [])
+          ];
+          const markdown = [text ? escapeMultiline(text) : '', extras.join('\n')].filter(Boolean).join('\n\n');
+          result.push({
+            role: 'user',
+            ids: id ? [id] : [],
+            text: [text, ...files.map((name) => `📎 ${name}`)].filter(Boolean).join('\n'),
+            markdown,
+            createTime: Number(message?.create_time || 0)
+          });
+          continue;
+        }
+
+        if (!assistantTurn) {
+          assistantTurn = { role: 'assistant', ids: [], pieces: [], createTime: Number(message?.create_time || 0) };
+          result.push(assistantTurn);
+        }
+        if (id) assistantTurn.ids.push(id);
+        if (isHiddenContext(message)) continue;
+
+        const type = String(message?.content?.content_type || '');
+        const recipient = String(message?.recipient || 'all');
+        if (role === 'assistant' && recipient === 'all' && (type === 'text' || type === 'multimodal_text')) {
+          const text = applyContentReferences(stringParts(message), message);
+          if (text) assistantTurn.pieces.push(text);
+        } else if (role === 'assistant' && type === 'code') {
+          const canvas = canvasMarkdown(message);
+          if (canvas) assistantTurn.pieces.push(canvas);
+        } else if (role === 'tool' && imageParts(message)) {
+          assistantTurn.pieces.push('🖼 [Image]');
+        }
+      }
+
+      const turns = [];
+      for (const turn of result) {
+        if (turn.role === 'assistant') {
+          const markdown = normalizeMarkdown(turn.pieces.join('\n\n'));
+          if (!markdown) {
+            const previous = turns[turns.length - 1];
+            if (previous) previous.ids.push(...turn.ids);
+            continue;
+          }
+          turns.push({ role: 'assistant', ids: turn.ids, text: markdown, markdown, createTime: turn.createTime });
+        } else {
+          turns.push(turn);
+        }
+      }
+      return turns;
+    };
+
+    // DOM reader for the September 2026 UI: each message is a
+    // [data-chatgpt-search-unit-key="fallback-turn-N:i:role"] element inside the
+    // visible [data-chatgpt-conversation-selection-target]. Previously opened chats
+    // stay mounted under display:none wrappers and must be ignored. The list is
+    // virtualized, so the scroll container is swept top to bottom.
+    const unitRole = (unit) => {
+      const key = String(unit.getAttribute('data-chatgpt-search-unit-key') || '');
+      const fromKey = key.match(/:(user|assistant|system|tool)$/i)?.[1];
+      if (fromKey) return fromKey.toLowerCase();
+      if (unit.querySelector('[data-user-message-bubble="true"]')) return 'user';
+      return String(unit.querySelector('h4[data-conversation-role]')?.getAttribute('data-conversation-role') || 'unknown');
+    };
+
+    const unitOrder = (key) => {
+      const match = String(key || '').match(/turn-(\d+):(\d+)/);
+      return match ? [Number(match[1]), Number(match[2])] : [Number.MAX_SAFE_INTEGER, 0];
+    };
+
+    const unitTurn = (unit) => {
+      const clone = unit.cloneNode(true);
+      clone.querySelectorAll('h4[data-conversation-role], .sr-only').forEach((node) => node.remove());
+      const bubble = clone.querySelector('[data-user-message-bubble="true"]');
+      const body = bubble ||
+        clone.querySelector('.markdown, [class*="markdown"], [class*="prose"], [class*="whitespace-pre-wrap"]') ||
+        clone;
+      const text = cleanText(body.innerText || body.textContent);
+      if (!text) return null;
+      const markdown = normalizeMarkdown(nodeToMarkdown(body)) || escapeMultiline(text);
+      const ids = String(unit.getAttribute('data-chatgpt-search-message-ids') || '').split(/\s+/).filter(Boolean);
+      return { role: unitRole(unit), ids: [...new Set(ids)], text, markdown };
+    };
+
+    const readModernDom = async () => {
+      const container = [...document.querySelectorAll('[data-chatgpt-conversation-selection-target]')].filter(isVisible).pop();
+      if (!container) return null;
+
+      const collected = new Map();
+      const harvest = () => {
+        for (const unit of container.querySelectorAll('[data-chatgpt-search-unit-key]')) {
+          if (unit.parentElement?.closest('[data-chatgpt-search-unit-key]')) continue;
+          const key = String(unit.getAttribute('data-chatgpt-search-unit-key') || '');
+          if (!key || collected.has(key)) continue;
+          const turn = unitTurn(unit);
+          if (turn) collected.set(key, turn);
+        }
+      };
+
+      let scroller = container.parentElement;
+      while (scroller && scroller !== document.body && !(scroller.scrollHeight > scroller.clientHeight + 40 && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) {
+        scroller = scroller.parentElement;
+      }
+      if (!scroller || scroller === document.body) scroller = document.scrollingElement || document.documentElement;
+
+      harvest();
+      if (options.sweep !== false && scroller.scrollHeight > scroller.clientHeight + 40) {
+        const original = scroller.scrollTop;
+        const deadline = Date.now() + 90 * 1000;
+        let previousHeight = -1;
+        scroller.scrollTop = 0;
+        await wait(450);
+        // Older turns may be lazily prepended while the top is reached.
+        for (let guard = 0; guard < 20 && scroller.scrollHeight !== previousHeight && Date.now() < deadline; guard += 1) {
+          previousHeight = scroller.scrollHeight;
+          harvest();
+          scroller.scrollTop = 0;
+          await wait(450);
+        }
+        for (let guard = 0; guard < 600 && Date.now() < deadline; guard += 1) {
+          harvest();
+          if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4) break;
+          scroller.scrollTop += Math.max(240, Math.floor(scroller.clientHeight * 0.75));
+          await wait(220);
+        }
+        harvest();
+        scroller.scrollTop = original;
+      }
+
+      return [...collected.entries()]
+        .sort((left, right) => {
+          const [a1, a2] = unitOrder(left[0]);
+          const [b1, b2] = unitOrder(right[0]);
+          return a1 - b1 || a2 - b2;
+        })
+        .map(([, turn]) => turn);
+    };
+
+    // Pre-September-2026 markup, kept for accounts that still receive the old UI.
+    const readLegacyDom = () => {
+      const main = document.querySelector('main') || document.body;
+      const legacyTurns = [];
+      const seen = new Set();
+      const addTurn = (root, role) => {
+        const body = root.querySelector(
+          '.markdown, [class*="markdown"], [class*="prose"], [class*="whitespace-pre-wrap"]'
+        ) || root;
+        const text = cleanText(body.innerText || body.textContent);
+        if (!text) return;
+        const markdown = normalizeMarkdown(nodeToMarkdown(body)) || escapeMultiline(text);
+        const id = root.getAttribute('data-message-id') || root.querySelector('[data-message-id]')?.getAttribute('data-message-id') || '';
+        legacyTurns.push({ role, ids: id ? [id] : [], text, markdown });
+      };
+
+      for (const roleNode of main.querySelectorAll('[data-message-author-role]')) {
+        if (!isVisible(roleNode)) continue;
+        const root = roleNode.closest(
+          'article, [data-testid^="conversation-turn-"], [data-message-id], [class*="group/conversation-turn"]'
+        ) || roleNode;
+        if (seen.has(root)) continue;
         seen.add(root);
-        addTurn(root, index % 2 === 0 ? 'user' : 'assistant');
-      });
+        addTurn(root, roleNode.getAttribute('data-message-author-role') || 'unknown');
+      }
+
+      if (!legacyTurns.length) {
+        const candidates = [...main.querySelectorAll('[data-testid^="conversation-turn-"], article, [class*="group/conversation-turn"]')]
+          .filter(isVisible);
+        candidates.forEach((root, index) => {
+          if (seen.has(root)) return;
+          seen.add(root);
+          addTurn(root, index % 2 === 0 ? 'user' : 'assistant');
+        });
+      }
+      return legacyTurns;
+    };
+
+    let turns = [];
+    let title = domTitle;
+    let source = 'api';
+    let apiError = '';
+
+    if (conversationId) {
+      try {
+        const { data, error } = await fetchConversation();
+        if (data) {
+          turns = turnsFromConversation(data);
+          title = cleanText(data?.title || '') || title;
+        } else {
+          apiError = error || 'unavailable';
+        }
+      } catch (error) {
+        apiError = String(error?.message || error);
+      }
+    } else {
+      apiError = 'no conversation id';
     }
 
     if (!turns.length) {
-      const text = cleanText(main.innerText || main.textContent);
-      if (!text) return { ok: false, error: 'No text was found on this page.' };
-      turns.push({ role: 'conversation', text, markdown: escapeMultiline(text) });
+      source = 'dom';
+      turns = (await readModernDom()) || [];
+      if (!turns.length) turns = readLegacyDom();
     }
+
+    // The old "whole page as one message" fallback is intentionally gone: it hid
+    // reader failures behind a single bogus message.
+    if (!turns.length) {
+      return {
+        ok: false,
+        error: apiError
+          ? `The conversation could not be read (ChatGPT API: ${apiError}; no messages found on the page).`
+          : 'No messages were found in this conversation.'
+      };
+    }
+
+    title = title || 'ChatGPT conversation';
+    const warning = source === 'dom' ? (apiError || 'api unavailable') : '';
 
     const records = turns.map((turn, index) => ({
       index,
       role: turn.role,
+      messageId: turn.ids?.[0] || '',
+      messageIds: Array.isArray(turn.ids) ? [...new Set(turn.ids)] : [],
       text: turn.text,
       markdown: turn.markdown
     }));
     const messages = records.map((record) => ({
       index: record.index,
       role: record.role,
+      messageIds: record.messageIds,
       preview: record.text.length > 180 ? `${record.text.slice(0, 177)}…` : record.text
     }));
 
@@ -486,7 +818,9 @@ function extractThread(options = {}) {
       title,
       messages,
       messageCount: records.length,
-      selectedCount: selectedRecords.length
+      selectedCount: selectedRecords.length,
+      source,
+      warning
     };
 
     if (!options.includeContent) return response;
@@ -501,7 +835,7 @@ function extractThread(options = {}) {
     };
     const format = ['markdown', 'text', 'json'].includes(options.format) ? options.format : 'markdown';
     const exportedAt = new Date().toISOString();
-    const source = location.href;
+    const sourceUrl = location.href;
     let content;
     let extension;
     let mimeType;
@@ -510,7 +844,8 @@ function extractThread(options = {}) {
       content = JSON.stringify({
         title,
         exportedAt,
-        source,
+        source: location.href,
+        reader: source,
         messageCount: records.length,
         selectedCount: selectedRecords.length,
         messages: selectedRecords
@@ -522,7 +857,7 @@ function extractThread(options = {}) {
         title,
         '',
         `Exported: ${exportedAt}`,
-        `Source: ${source}`,
+        `Source: ${sourceUrl}`,
         `Messages: ${selectedRecords.length} of ${records.length}`,
         ''
       ];
@@ -537,7 +872,7 @@ function extractThread(options = {}) {
         `# ${title}`,
         '',
         `> Exported: ${exportedAt}`,
-        `> Source: ${source}`,
+        `> Source: ${sourceUrl}`,
         `> Messages: ${selectedRecords.length} of ${records.length}`,
         ''
       ];

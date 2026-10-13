@@ -26,7 +26,9 @@
         target: { tabId },
         world: 'MAIN',
         func: collectEarlyMessageAttachmentSnapshot,
-        args: [selectedIndices]
+        // 2.33.0: collectors index messages differently from the transcript reader,
+        // so they scan everything and hints are re-bound to transcript turns below.
+        args: [null]
       });
       earlyHints = Array.isArray(earlyRuns?.[0]?.result?.hints) ? earlyRuns[0].result.hints : [];
     } catch (error) {
@@ -35,6 +37,8 @@
 
     const jsonResult = await prepare(tabId, selectedIndices, 'json');
     const payload = JSON.parse(jsonResult.content);
+    const turnIndexById = await readTurnIndexById(tabId, payload);
+    earlyHints = remapHintsToTranscriptTurns(earlyHints, turnIndexById, selectedIndices);
 
     let apiHints = [...earlyHints];
     let lateHints = [];
@@ -43,9 +47,10 @@
         target: { tabId },
         world: 'MAIN',
         func: collectConversationAttachmentHints,
-        args: [selectedIndices]
+        args: [null]
       });
       lateHints = Array.isArray(hintRuns?.[0]?.result?.hints) ? hintRuns[0].result.hints : [];
+      lateHints = remapHintsToTranscriptTurns(lateHints, turnIndexById, selectedIndices);
       apiHints = mergeMessageBoundHints(apiHints, lateHints);
     } catch (error) {
       console.warn('GPT Project & Memory Tools: conversation attachment hints unavailable.', error);
@@ -126,7 +131,9 @@
 
     payload.exportDiagnostics = {
       attachmentDetection: {
-        version: '2.32.0',
+        version: '2.33.0',
+        transcriptReader: String(payload.reader || ''),
+        boundMessageIds: turnIndexById.size,
         early: summarizeAttachmentDiagnostics(earlyHints),
         late: summarizeAttachmentDiagnostics(lateHints),
         mergedHints: summarizeAttachmentDiagnostics(apiHints),
@@ -167,6 +174,49 @@
   };
 })();
 
+
+// 2.33.0: the transcript is a list of turns read from the conversation API, where
+// one assistant turn spans several API messages (tool calls, tool output, final
+// answer). Attachment hints carry the API message id, so they are bound to the
+// turn containing that id. Hints without an id keep their DOM-derived index.
+async function readTurnIndexById(tabId, payload) {
+  const map = new Map();
+  const add = (messages) => {
+    for (const message of Array.isArray(messages) ? messages : []) {
+      if (!Number.isInteger(message?.index)) continue;
+      for (const id of Array.isArray(message.messageIds) ? message.messageIds : []) {
+        if (id && !map.has(String(id))) map.set(String(id), message.index);
+      }
+    }
+  };
+  try {
+    const inspected = await self.readThread(tabId, { includeContent: false });
+    if (inspected?.ok) add(inspected.messages);
+  } catch (error) {
+    console.warn('GPT Project & Memory Tools: transcript turn map unavailable.', error);
+  }
+  if (!map.size) add(payload?.messages);
+  return map;
+}
+
+function remapHintsToTranscriptTurns(hints, turnIndexById, selectedIndices) {
+  const selected = Array.isArray(selectedIndices) ? new Set(selectedIndices.filter(Number.isInteger)) : null;
+  const out = [];
+  for (const hint of Array.isArray(hints) ? hints : []) {
+    if (!hint || typeof hint !== 'object') continue;
+    const messageId = String(hint.messageId || '').trim();
+    let messageIndex = Number.isInteger(hint.messageIndex) ? hint.messageIndex : -1;
+    if (messageId && turnIndexById.size) {
+      // An id outside the current branch belongs to an edited/regenerated
+      // version of the conversation and must not be exported with this one.
+      if (!turnIndexById.has(messageId)) continue;
+      messageIndex = turnIndexById.get(messageId);
+    }
+    if (selected && messageIndex >= 0 && !selected.has(messageIndex)) continue;
+    out.push({ ...hint, messageIndex });
+  }
+  return out;
+}
 
 function buildFaultSafeAttachmentAssetsFromHints(rawHints, selectedIndices, workerError = '') {
   const selected = Array.isArray(selectedIndices) ? new Set(selectedIndices.filter(Number.isInteger)) : null;
