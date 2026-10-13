@@ -12,9 +12,25 @@ const CHUNK_BYTES = 4 * 1024 * 1024;
 
 // Runs in the page (self-contained): fetches the file and keeps it under a key.
 export async function stageInPage(source, maxBytes) {
-  const withTimeout = (promise, ms) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))]);
+  const withTimeout = (promise, ms) => {
+    let timer;
+    const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), ms); });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  };
+  // Rate limits and transient server errors are retried (a live ChatGPT export lost
+  // one of 16 files to a single HTTP 503).
+  const fetchRetry = async (url, init, ms) => {
+    let response;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      response = await withTimeout(fetch(url, init), ms);
+      if (![429, 500, 502, 503, 504].includes(response.status) || attempt === 2) return response;
+      const retryAfter = Number(response.headers.get('retry-after'));
+      await new Promise((resolve) => setTimeout(resolve, Math.min(10000, retryAfter > 0 ? retryAfter * 1000 : 1500 * (attempt + 1) ** 2)));
+    }
+    return response;
+  };
   const fetchBlob = async (url, init = {}) => {
-    const response = await withTimeout(fetch(url, { credentials: 'include', ...init }), 180000);
+    const response = await fetchRetry(url, { credentials: 'include', ...init }, 180000);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const length = Number(response.headers.get('content-length') || 0);
     if (length > maxBytes) throw new Error(`too-large ${length}`);
@@ -46,7 +62,7 @@ export async function stageInPage(source, maxBytes) {
         : [`/backend-api/conversation/${encodeURIComponent(source.conversationId)}/interpreter/download?message_id=${encodeURIComponent(source.messageId)}&sandbox_path=${encodeURIComponent(source.path)}`];
       let lastError = 'no route';
       for (const route of routes) {
-        const response = await withTimeout(fetch(route, { credentials: 'include', headers }), 30000);
+        const response = await fetchRetry(route, { credentials: 'include', headers }, 30000);
         if (!response.ok) { lastError = `descriptor HTTP ${response.status}`; continue; }
         const descriptor = await response.json();
         if (!descriptor?.download_url) { lastError = `descriptor ${descriptor?.status || 'without url'}`; continue; }

@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createZip, crc32, crc32Update } from '../../extension-v3/src/core/zip.js';
-import { buildFullPackage, planAssets, safeFileName, tabDownloader } from '../../extension-v3/src/core/assets.js';
+import { buildFullPackage, planAssets, safeFileName, tabDownloader, stageInPage } from '../../extension-v3/src/core/assets.js';
 import { finalizeConversation } from '../../extension-v3/src/core/model.js';
 import * as chatgpt from '../../extension-v3/src/platforms/chatgpt.js';
 import * as claude from '../../extension-v3/src/platforms/claude.js';
@@ -33,6 +33,21 @@ test('crc32 matches the reference value, also incrementally', () => {
   const bytes = new TextEncoder().encode('The quick brown fox jumps over the lazy dog');
   assert.equal(crc32(bytes), 0x414fa339);
   assert.equal(crc32Update(crc32Update(0, bytes.subarray(0, 10)), bytes.subarray(10)), 0x414fa339);
+});
+
+test('staging retries a transient 503 and gives up on 404', async () => {
+  const statuses = [503, 200];
+  globalThis.window = {};
+  globalThis.location = { origin: 'https://claude.ai' };
+  globalThis.fetch = async () => {
+    const status = statuses.shift() ?? 404;
+    return { ok: status === 200, status, headers: { get: (name) => (name === 'retry-after' ? '0.01' : null) }, blob: async () => new Blob(['ok']) };
+  };
+  const staged = await stageInPage({ type: 'url', url: 'https://assets/x' }, 1000);
+  assert.equal(staged.ok, true, staged.error);
+  assert.equal(staged.size, 2);
+  const failed = await stageInPage({ type: 'url', url: 'https://assets/y' }, 1000);
+  assert.deepEqual(failed, { ok: false, error: 'HTTP 404' });
 });
 
 test('tab downloader pulls a staged file in chunks and releases it', async () => {
