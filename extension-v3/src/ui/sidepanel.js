@@ -1,4 +1,4 @@
-import { platforms, platformFor, platformById } from '../platforms/index.js';
+import { platforms, platformFor, platformById, allOrigins } from '../platforms/index.js';
 import { readConversation } from '../core/reader.js';
 import { toMarkdown, toHtml, toJson, exportFilename, selectMessages } from '../core/export.js';
 import { buildHandoffPrompt, buildMemoryBlock } from '../core/handoff.js';
@@ -62,11 +62,24 @@ function localize() {
   nodes.backup.textContent = t('backup');
   nodes.restore.textContent = t('restore');
   nodes.platformFilter.replaceChildren(new Option(t('allPlatforms'), ''), ...platforms.map((p) => new Option(p.label, p.id)));
+  nodes.platformFilter.value = '';
 }
 
 // ---------- conversation ----------
 
+// sidepanel.html?tab=<id> pins the panel to one tab, so the panel can also be
+// opened as a normal page (for testing or a wider view).
+// sidepanel.html?match=<url part> pins it to the first tab whose URL contains it.
+const params = new URLSearchParams(location.search);
+let pinnedTabId = Number(params.get('tab')) || null;
+const pinnedMatch = params.get('match') || '';
+
 async function currentTab() {
+  if (!pinnedTabId && pinnedMatch) {
+    const tabs = await chrome.tabs.query({});
+    pinnedTabId = tabs.find((tab) => String(tab.url || '').includes(pinnedMatch))?.id || null;
+  }
+  if (pinnedTabId) return chrome.tabs.get(pinnedTabId).catch(() => null);
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   return tab || null;
 }
@@ -84,6 +97,13 @@ async function loadConversation({ refresh = false } = {}) {
   nodes.conversation.hidden = true;
   nodes.grant.hidden = true;
   showHeader(platform);
+  // Without host access Chrome hides the tab URL, so the platform cannot be
+  // recognised yet: offer access to all supported sites at once.
+  if (activeTab && !activeTab.url && !(await chrome.permissions.contains({ origins: allOrigins }))) {
+    nodes.grant.hidden = false;
+    nodes.grant.dataset.platform = '';
+    return setStatus(nodes.status, t('needAccessAll'));
+  }
   if (!platform) return setStatus(nodes.status, t('unsupported'));
   if (!platform.conversationIdFromUrl(activeTab.url)) return setStatus(nodes.status, t('noConversation'));
   if (!(await chrome.permissions.contains({ origins: platform.origins }))) {
@@ -377,7 +397,7 @@ nodes.tabLibrary.addEventListener('click', () => showTab('library'));
 nodes.refresh.addEventListener('click', guard(nodes.status, () => loadConversation({ refresh: true })));
 nodes.grant.addEventListener('click', guard(nodes.status, async () => {
   const platform = platformById(nodes.grant.dataset.platform);
-  if (await chrome.permissions.request({ origins: platform.origins })) await loadConversation();
+  if (await chrome.permissions.request({ origins: platform ? platform.origins : allOrigins })) await loadConversation();
 }));
 nodes.roleFilter.addEventListener('click', (event) => {
   const role = event.target.closest('button')?.dataset.role;
@@ -408,7 +428,9 @@ async function followActiveTab() {
   await loadConversation();
 }
 chrome.tabs.onActivated.addListener(() => followActiveTab().catch(() => {}));
+chrome.permissions.onAdded.addListener(() => loadConversation().catch(() => {}));
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
-  if (tab.active && info.status === 'complete') followActiveTab().catch(() => {});
+  const relevant = pinnedTabId ? tabId === pinnedTabId : tab.active;
+  if (relevant && info.status === 'complete') followActiveTab().catch(() => {});
 });
 followActiveTab().catch((error) => setStatus(nodes.status, String(error?.message || error), 'error'));
