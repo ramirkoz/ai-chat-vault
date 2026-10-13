@@ -1,0 +1,79 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --border: #e2e2dd;
+  --text: #1c1c1a;
+  --muted: #6b6b66;
+  --accent: #2456d6;
+  --accent-text: #ffffff;
+  --user: #eef2ff;
+  --warn: #9a5b00;
+  --error: #b42318;
+  --ok: #166534;
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #151514;
+    --surface: #1f1f1d;
+    --border: #34342f;
+    --text: #ecece8;
+    --muted: #a3a39c;
+    --accent: #7ea2ff;
+    --accent-text: #0b1020;
+    --user: #1c2232;
+    --warn: #f0b35a;
+    --error: #ff8a80;
+    --ok: #7bd88f;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+button, select, input { font: inherit; color: inherit; }
+button {
+  border: 1px solid var(--border); background: var(--surface); border-radius: 8px;
+  padding: 6px 10px; cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+button.link { border: 0; background: none; color: var(--accent); padding: 2px 4px; }
+button.icon { width: 32px; height: 32px; padding: 0; }
+select, input[type="text"], input[type="search"] {
+  border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 6px 8px; min-width: 0;
+}
+.top { display: flex; align-items: center; gap: 8px; padding: 12px 12px 6px; }
+.top h1 { flex: 1; font-size: 15px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 8px; background: var(--user); color: var(--accent); white-space: nowrap; }
+.tabs { display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--border); }
+.tabs button { border: 0; border-radius: 0; background: none; padding: 8px 10px; color: var(--muted); border-bottom: 2px solid transparent; }
+.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.panel { padding: 10px 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.row { display: flex; align-items: center; gap: 6px; }
+.row.wrap { flex-wrap: wrap; }
+.row > input[type="search"] { flex: 1; }
+.spacer { flex: 1; }
+.status { margin: 0; color: var(--muted); }
+.status.warn { color: var(--warn); }
+.status.error { color: var(--error); }
+.status.ok { color: var(--ok); }
+.muted { color: var(--muted); margin: 0; font-size: 12px; }
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.segmented button { border: 0; border-radius: 0; padding: 4px 10px; }
+.segmented button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
+.messages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow: auto; }
+.messages li { display: grid; grid-template-columns: auto 1fr; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px; }
+.messages li.user { background: var(--user); }
+.messages li[hidden] { display: none; }
+.messages .who { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.messages .preview { margin: 2px 0 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+.actions { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.library { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.library li { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+.library h3 { margin: 0; font-size: 13px; }
+.library .meta { color: var(--muted); font-size: 12px; }
+.library .excerpt { margin: 4px 0; font-size: 12px; white-space: pre-wrap; max-height: 7.5em; overflow: hidden; }
+.library .row { margin-top: 4px; }
+.footer { justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 8px; }
