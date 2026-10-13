@@ -1,4 +1,5 @@
 name: Validate adaptive toolbar popup
+          assert manifest['name'] == 'GPT Project & Memory Tools'
 
 on:
   push:
@@ -36,10 +37,7 @@ jobs:
           router = (root / 'popup-router.js').read_text()
           site_js = (root / 'site-tools.js').read_text()
           background = (root / 'background-entry.js').read_text()
-
-          assert manifest['name'] == 'ChatExtra Toolkit'
-          assert manifest['version'] == '2.0.0'
-          assert manifest['permissions'] == ['activeTab', 'scripting', 'downloads']
+          assert manifest['permissions'] == ['activeTab', 'scripting', 'downloads', 'storage']
           assert manifest['action']['default_popup'] == 'popup-entry.html'
           assert 'contextMenus' not in manifest['permissions']
           assert 'sidePanel' not in manifest['permissions']

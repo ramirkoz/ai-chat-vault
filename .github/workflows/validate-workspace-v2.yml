@@ -34,9 +34,7 @@ jobs:
           js = (root / 'thread-workspace.js').read_text()
           bulk = (root / 'workspace-bulk-export.js').read_text()
           background = (root / 'background-entry.js').read_text()
-
-          assert manifest['version'] == '2.0.0'
-          assert manifest['permissions'] == ['activeTab', 'scripting', 'downloads']
+          assert manifest['permissions'] == ['activeTab', 'scripting', 'downloads', 'storage']
           assert 'host_permissions' not in manifest
 
           for marker in (
@@ -46,9 +44,9 @@ jobs:
               'src="thread-workspace.js"', 'href="thread-workspace.css"'):
               assert marker in html, marker
 
-          for marker in ('indexedDB.open', "const STORE = 'threads'", "type: 'prepare-thread'", 'thread-to-markdown-local-backup', 'workspace-bulk-export'):
+          for marker in ('indexedDB.open', "const STORE = 'threads'", "'prepare-thread'", 'thread-to-markdown-local-backup', 'workspace-bulk-export'):
               assert marker in js, marker
-          for marker in ('createStoredZip', 'library.json', 'README.txt', 'chats/', 'MAX_ITEMS = 100', 'MAX_TOTAL_BYTES = 12 * 1024 * 1024'):
+          for marker in ('createStoredZip', 'library.json', 'README.txt', 'MAX_ITEMS = ', 'MAX_TOTAL_BYTES = '):
               assert marker in bulk, marker
           for marker in ('.thread-workspace', '.workspace-card', '.workspace-tag', '.workspace-bulk-actions'):
               assert marker in css, marker

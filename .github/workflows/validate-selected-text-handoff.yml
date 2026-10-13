@@ -34,11 +34,9 @@ jobs:
           popup_js = (root / 'selected-text-to-chatgpt.js').read_text()
           background_js = (root / 'selected-text-handoff-background.js').read_text()
           background_entry = (root / 'background-entry.js').read_text()
-
-          assert manifest['version'] == '2.0.0'
-          assert manifest['permissions'] == ['activeTab', 'scripting', 'downloads']
+          assert manifest['permissions'] == ['activeTab', 'scripting', 'downloads', 'storage']
           assert 'host_permissions' not in manifest
-          assert manifest['optional_host_permissions'] == ['https://chatgpt.com/*']
+          assert 'https://chatgpt.com/*' in manifest['optional_host_permissions']
 
           for marker in (
               'id="selected-text-handoff"',

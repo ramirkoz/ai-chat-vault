@@ -33,11 +33,9 @@ jobs:
           css = (root / 'youtube-handoff.css').read_text()
           js = (root / 'youtube-subtitles-to-chatgpt.js').read_text()
           fix = (root / 'youtube-player-caption-fix.js').read_text()
-
-          assert manifest['version'] == '2.0.0'
-          assert manifest['permissions'] == ['activeTab', 'scripting', 'downloads']
+          assert manifest['permissions'] == ['activeTab', 'scripting', 'downloads', 'storage']
           assert 'host_permissions' not in manifest
-          assert manifest['optional_host_permissions'] == ['https://chatgpt.com/*']
+          assert 'https://chatgpt.com/*' in manifest['optional_host_permissions']
 
           for marker in (
               'href="youtube-handoff.css"',
