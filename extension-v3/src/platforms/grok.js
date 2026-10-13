@@ -47,7 +47,25 @@ export async function fetchRaw(conversationId) {
   if (!responses.ok) return { ok: false, status: responses.status };
   const metaResponse = await fetch(base, { credentials: 'include' }).catch(() => null);
   const meta = metaResponse?.ok ? await metaResponse.json().catch(() => null) : null;
-  return { ok: true, status: 200, data: { nodes, responses: await responses.json(), meta } };
+  // Web search results, steps and tool output stay in the page.
+  const loaded = await responses.json();
+  const slim = (item) => ({
+    responseId: item.responseId, sender: item.sender, message: item.message, query: item.query,
+    createTime: item.createTime, parentResponseId: item.parentResponseId,
+    fileAttachmentsMetadata: (item.fileAttachmentsMetadata || []).map((file) => ({ fileName: file.fileName, fileMimeType: file.fileMimeType, fileUri: file.fileUri })),
+    fileAttachmentAssetMetadata: (item.fileAttachmentAssetMetadata || []).map((file) => ({ name: file.name })),
+    generatedImageUrls: item.generatedImageUrls || [],
+    imageAttachments: item.imageAttachments || []
+  });
+  return {
+    ok: true,
+    status: 200,
+    data: {
+      nodes: { responseNodes: (nodes?.responseNodes || []).map((node) => ({ responseId: node.responseId, sender: node.sender, parentResponseId: node.parentResponseId })) },
+      responses: { responses: (loaded?.responses || []).map(slim) },
+      meta: meta ? { title: meta.title, createTime: meta.createTime, modifyTime: meta.modifyTime, conversationId: meta.conversationId } : null
+    }
+  };
 }
 
 // Follows the active thread: the last response node and its parents.

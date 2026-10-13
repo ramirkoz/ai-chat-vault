@@ -1,18 +1,17 @@
-import { createZipParts } from './zip.js';
+import { createZipParts, crc32Update } from './zip.js';
 import { toMarkdown, toHtml, toJson, selectMessages, exportFilename } from './export.js';
 
 export const MAX_FILE_BYTES = 200 * 1024 * 1024;
 export const MAX_TOTAL_BYTES = 700 * 1024 * 1024;
+const CHUNK_BYTES = 4 * 1024 * 1024;
 
-// Runs in the chat page (MAIN world, self-contained) so the platform's own session
-// cookies and tokens apply. Returns the file as base64.
-export async function downloadInPage(source, maxBytes) {
-  const toBase64 = (blob) => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
+// Downloads happen in the chat page (MAIN world) so the platform's own session
+// cookies and tokens apply. The file stays in the page as a Blob and the extension
+// pulls it in 4 MB base64 chunks: one huge string per file froze both the chat tab
+// and the service worker on a 171-message Claude chat with 89 files.
+
+// Runs in the page (self-contained): fetches the file and keeps it under a key.
+export async function stageInPage(source, maxBytes) {
   const withTimeout = (promise, ms) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))]);
   const fetchBlob = async (url, init = {}) => {
     const response = await withTimeout(fetch(url, { credentials: 'include', ...init }), 180000);
@@ -61,10 +60,64 @@ export async function downloadInPage(source, maxBytes) {
     } else {
       throw new Error(`unknown source ${source.type}`);
     }
-    return { ok: true, base64: await toBase64(blob), mime: blob.type, size: blob.size, name };
+    const store = (window.__aiChatStaged ||= new Map());
+    const key = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    store.set(key, blob);
+    return { ok: true, key, mime: blob.type, size: blob.size, name };
   } catch (error) {
     return { ok: false, error: String(error?.message || error) };
   }
+}
+
+// Runs in the page: one base64 chunk of a staged file.
+export async function readChunkInPage(key, start, end) {
+  const blob = window.__aiChatStaged?.get(key);
+  if (!blob) return { ok: false, error: 'staged file missing' };
+  const base64 = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob.slice(start, end));
+  });
+  return { ok: true, base64 };
+}
+
+// Runs in the page: frees a staged file.
+export function releaseInPage(key) {
+  window.__aiChatStaged?.delete(key);
+  return true;
+}
+
+function base64Into(target, offset, base64) {
+  const binary = atob(base64);
+  for (let i = 0; i < binary.length; i += 1) target[offset + i] = binary.charCodeAt(i);
+  return binary.length;
+}
+
+// Downloader bound to one chat tab; returns { ok, bytes, crc, mime, name } or { ok: false, error }.
+export function tabDownloader(tabId) {
+  const run = async (func, args) => {
+    const [result] = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func, args });
+    return result?.result;
+  };
+  return async (source) => {
+    const staged = await run(stageInPage, [source, MAX_FILE_BYTES]);
+    if (!staged?.ok) return { ok: false, error: staged?.error || 'no result' };
+    try {
+      const bytes = new Uint8Array(staged.size);
+      let crc = 0;
+      for (let start = 0; start < staged.size; start += CHUNK_BYTES) {
+        const end = Math.min(staged.size, start + CHUNK_BYTES);
+        const chunk = await run(readChunkInPage, [staged.key, start, end]);
+        if (!chunk?.ok) return { ok: false, error: chunk?.error || 'chunk failed' };
+        const written = base64Into(bytes, start, chunk.base64);
+        crc = crc32Update(crc, bytes.subarray(start, start + written));
+      }
+      return { ok: true, bytes, crc, mime: staged.mime, name: staged.name };
+    } finally {
+      await run(releaseInPage, [staged.key]).catch(() => {});
+    }
+  };
 }
 
 const MIME_EXTENSIONS = {
@@ -131,7 +184,10 @@ export async function buildFullPackage(conversation, indices, { download, onProg
   for (let i = 0; i < plan.length; i += 1) {
     const asset = plan[i];
     onProgress({ done: i, total: plan.length, name: asset.name });
+    // Let the service worker answer other messages between files.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     let bytes = null;
+    let crc;
     let mime = asset.mime;
     let reason = '';
     if (asset.source.type === 'inline-text') {
@@ -139,7 +195,8 @@ export async function buildFullPackage(conversation, indices, { download, onProg
     } else {
       const result = await download(asset.source).catch((error) => ({ ok: false, error: String(error?.message || error) }));
       if (result?.ok) {
-        bytes = base64ToBytes(result.base64);
+        bytes = result.bytes || base64ToBytes(result.base64);
+        crc = result.crc;
         mime = result.mime || mime;
       } else {
         reason = result?.error || 'download failed';
@@ -170,7 +227,7 @@ export async function buildFullPackage(conversation, indices, { download, onProg
     }
     usedNames.add(candidate.toLowerCase());
     total += bytes.length;
-    const entry = { messageIndex: asset.messageIndex, name: asset.name, path: candidate, size: bytes.length, sha256: hash, mime, note: asset.note || '', bytes };
+    const entry = { messageIndex: asset.messageIndex, name: asset.name, path: candidate, size: bytes.length, sha256: hash, mime, note: asset.note || '', bytes, crc };
     byHash.set(hash, entry);
     files.push(entry);
   }
@@ -189,7 +246,7 @@ export async function buildFullPackage(conversation, indices, { download, onProg
     source: conversation.url,
     reader: conversation.source,
     messages: selectMessages(conversation, indices).length,
-    files: files.map(({ bytes, ...file }) => file),
+    files: files.map(({ bytes, crc, ...file }) => file),
     missing
   };
   const entries = [
@@ -197,7 +254,7 @@ export async function buildFullPackage(conversation, indices, { download, onProg
     { name: `${base}/conversation.html`, data: toHtml(conversation, indices, exportedAt, { links }) },
     { name: `${base}/conversation.json`, data: toJson(conversation, indices, exportedAt) },
     { name: `${base}/manifest.json`, data: JSON.stringify(manifest, null, 2) },
-    ...files.filter((file) => file.bytes).map((file) => ({ name: `${base}/${file.path}`, data: file.bytes }))
+    ...files.filter((file) => file.bytes).map((file) => ({ name: `${base}/${file.path}`, data: file.bytes, crc: file.crc }))
   ];
   if (missing.length) {
     entries.push({

@@ -4,8 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createZip, crc32 } from '../../extension-v3/src/core/zip.js';
-import { buildFullPackage, planAssets, safeFileName } from '../../extension-v3/src/core/assets.js';
+import { createZip, crc32, crc32Update } from '../../extension-v3/src/core/zip.js';
+import { buildFullPackage, planAssets, safeFileName, tabDownloader } from '../../extension-v3/src/core/assets.js';
 import { finalizeConversation } from '../../extension-v3/src/core/model.js';
 import * as chatgpt from '../../extension-v3/src/platforms/chatgpt.js';
 import * as claude from '../../extension-v3/src/platforms/claude.js';
@@ -29,8 +29,38 @@ function listWithPython(bytes) {
   return null;
 }
 
-test('crc32 matches the reference value', () => {
-  assert.equal(crc32(new TextEncoder().encode('The quick brown fox jumps over the lazy dog')), 0x414fa339);
+test('crc32 matches the reference value, also incrementally', () => {
+  const bytes = new TextEncoder().encode('The quick brown fox jumps over the lazy dog');
+  assert.equal(crc32(bytes), 0x414fa339);
+  assert.equal(crc32Update(crc32Update(0, bytes.subarray(0, 10)), bytes.subarray(10)), 0x414fa339);
+});
+
+test('tab downloader pulls a staged file in chunks and releases it', async () => {
+  const size = 9 * 1024 * 1024 + 123; // three 4 MB chunks
+  const original = new Uint8Array(size).map((_, i) => (i * 31) % 251);
+  const calls = [];
+  globalThis.window = { __aiChatStaged: new Map() };
+  globalThis.FileReader = class {
+    readAsDataURL(blob) { blob.arrayBuffer().then((buffer) => { this.result = `data:;base64,${Buffer.from(buffer).toString('base64')}`; this.onload(); }); }
+  };
+  globalThis.chrome = {
+    scripting: {
+      executeScript: async ({ func, args }) => {
+        calls.push(func.name);
+        if (func.name === 'stageInPage') {
+          window.__aiChatStaged.set('k', new Blob([original], { type: 'application/zip' }));
+          return [{ result: { ok: true, key: 'k', size, mime: 'application/zip', name: 'x.zip' } }];
+        }
+        return [{ result: await func(...args) }];
+      }
+    }
+  };
+  const result = await tabDownloader(1)({ type: 'url', url: 'https://x/y' });
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, ['stageInPage', 'readChunkInPage', 'readChunkInPage', 'readChunkInPage', 'releaseInPage']);
+  assert.ok(Buffer.from(result.bytes).equals(Buffer.from(original)));
+  assert.equal(result.crc, crc32(original));
+  assert.equal(window.__aiChatStaged.size, 0, 'staged blob is released');
 });
 
 test('zip archive is readable by an independent implementation', (t) => {
@@ -116,9 +146,9 @@ test('full package: dedupe, fallback text, honest missing list, links', async (t
     ]
   });
   assert.equal(planAssets(conversation, null).length, 5);
-  const png = Buffer.from([137, 80, 78, 71]).toString('base64');
+  const png = new Uint8Array([137, 80, 78, 71]);
   const download = async (source) => {
-    if (source.url === 'https://x/a' || source.url === 'https://x/a-again') return { ok: true, base64: png, mime: 'image/png', size: 4 };
+    if (source.url === 'https://x/a' || source.url === 'https://x/a-again') return { ok: true, bytes: png, crc: crc32(png), mime: 'image/png', size: 4 };
     if (source.url === 'https://x/404') return { ok: false, error: 'HTTP 404' };
     return { ok: false, error: 'HTTP 500' };
   };

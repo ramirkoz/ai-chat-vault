@@ -5,7 +5,7 @@ import { buildHandoffPrompt, buildMemoryBlock } from '../core/handoff.js';
 import { saveConversation, listRecords, deleteRecord, exportLibrary, importLibrary } from '../core/library.js';
 import { searchRecords } from '../core/search.js';
 import { PLATFORM_LABELS } from '../core/model.js';
-import { buildFullPackage, downloadInPage, MAX_FILE_BYTES } from '../core/assets.js';
+import { buildFullPackage, tabDownloader } from '../core/assets.js';
 import { enableTestMode, disableTestMode, isTestModeOn, testModeUntil } from '../core/test-mode.js';
 import { t } from './strings.js';
 
@@ -210,10 +210,7 @@ async function exportFullZip(indices) {
   setBusy(true);
   try {
     const result = await buildFullPackage(conversation, indices, {
-      download: async (source) => {
-        const [run] = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: downloadInPage, args: [source, MAX_FILE_BYTES] });
-        return run?.result || { ok: false, error: 'no result' };
-      },
+      download: tabDownloader(tabId),
       onProgress: ({ done, total, name }) => {
         if (total) setStatus(nodes.status, t('zipProgress', { done, total, name }));
       }

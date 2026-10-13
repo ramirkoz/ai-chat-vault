@@ -60,7 +60,75 @@ export async function fetchRaw(conversationId) {
     headers
   });
   if (!response.ok) return { ok: false, status: response.status };
-  return { ok: true, status: response.status, data: await response.json() };
+  const data = await response.json();
+
+  // Agentic chats carry megabytes of tool output; passing all of it from the page
+  // to the extension froze the tab. Only the active branch and the fields the
+  // normalizer reads are returned.
+  const slimPart = (part) => {
+    if (typeof part === 'string') return part;
+    if (!part || typeof part !== 'object') return null;
+    return {
+      content_type: part.content_type,
+      asset_pointer: part.asset_pointer,
+      size_bytes: part.size_bytes,
+      text: part.content_type === 'audio_transcription' ? part.text : undefined
+    };
+  };
+  const slimMessage = (message) => {
+    if (!message) return null;
+    const role = message.author?.role;
+    const recipient = message.recipient || 'all';
+    const content = message.content || {};
+    const type = content.content_type;
+    let slimContent = { content_type: type };
+    if (role === 'user' || (role === 'assistant' && recipient === 'all' && (type === 'text' || type === 'multimodal_text'))) {
+      slimContent = { content_type: type, parts: (content.parts || []).map(slimPart) };
+    } else if (role === 'assistant' && /^canmore\.create_textdoc$/i.test(recipient)) {
+      slimContent = { content_type: type, text: content.text };
+    } else if (role === 'tool') {
+      slimContent = { content_type: type, parts: (content.parts || []).filter((part) => part?.content_type === 'image_asset_pointer').map(slimPart) };
+    }
+    const metadata = message.metadata || {};
+    return {
+      id: message.id,
+      author: { role },
+      recipient,
+      create_time: message.create_time,
+      content: slimContent,
+      metadata: {
+        is_visually_hidden_from_conversation: metadata.is_visually_hidden_from_conversation,
+        attachments: (metadata.attachments || []).map((item) => ({ id: item.id, name: item.name, mime_type: item.mime_type, size: item.size })),
+        content_references: (metadata.content_references || [])
+          .filter((reference) => typeof reference?.matched_text === 'string')
+          .map((reference) => ({ matched_text: reference.matched_text, alt: reference.alt, start_idx: reference.start_idx }))
+      }
+    };
+  };
+  const mapping = data.mapping || {};
+  const kept = {};
+  const guard = new Set();
+  for (let nodeId = data.current_node; nodeId && mapping[nodeId] && !guard.has(nodeId); nodeId = mapping[nodeId].parent) {
+    guard.add(nodeId);
+    kept[nodeId] = { id: nodeId, parent: mapping[nodeId].parent, message: slimMessage(mapping[nodeId].message) };
+  }
+  if (!guard.size) {
+    for (const [nodeId, node] of Object.entries(mapping)) kept[nodeId] = { id: nodeId, parent: node.parent, message: slimMessage(node.message) };
+  }
+  return {
+    ok: true,
+    status: response.status,
+    data: {
+      title: data.title,
+      conversation_id: data.conversation_id,
+      gizmo_id: data.gizmo_id,
+      default_model_slug: data.default_model_slug,
+      create_time: data.create_time,
+      update_time: data.update_time,
+      current_node: data.current_node,
+      mapping: kept
+    }
+  };
 }
 
 function branchMessages(data) {

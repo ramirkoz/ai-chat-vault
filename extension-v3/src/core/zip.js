@@ -11,10 +11,15 @@ const CRC_TABLE = (() => {
   return table;
 })();
 
-export function crc32(bytes) {
-  let crc = 0xffffffff;
+// Incremental form: crc32Update(crc32Update(0, a), b) === crc32(a + b).
+export function crc32Update(previous, bytes) {
+  let crc = (previous ^ 0xffffffff) >>> 0;
   for (let i = 0; i < bytes.length; i += 1) crc = CRC_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
   return (crc ^ 0xffffffff) >>> 0;
+}
+
+export function crc32(bytes) {
+  return crc32Update(0, bytes);
 }
 
 function dosDateTime(date) {
@@ -25,7 +30,7 @@ function dosDateTime(date) {
 
 const encoder = new TextEncoder();
 
-// entries: [{ name, data: Uint8Array | string }] → the archive as an array of byte
+// entries: [{ name, data: Uint8Array | string, crc? }] → the archive as an array of byte
 // chunks, so large archives can go straight into a Blob without one big copy.
 export function createZipParts(entries, date = new Date()) {
   const { time, day } = dosDateTime(date);
@@ -36,7 +41,8 @@ export function createZipParts(entries, date = new Date()) {
   for (const entry of entries) {
     const name = encoder.encode(entry.name);
     const data = typeof entry.data === 'string' ? encoder.encode(entry.data) : entry.data;
-    const crc = crc32(data);
+    // Large files arrive with a CRC computed while they were downloaded.
+    const crc = Number.isInteger(entry.crc) ? entry.crc : crc32(data);
 
     const local = new DataView(new ArrayBuffer(30));
     local.setUint32(0, 0x04034b50, true);

@@ -1,5 +1,5 @@
 import { readConversation } from './reader.js';
-import { buildFullPackage, downloadInPage, planAssets, MAX_FILE_BYTES } from './assets.js';
+import { buildFullPackage, planAssets, tabDownloader } from './assets.js';
 import { buildHandoffPrompt } from './handoff.js';
 import { saveConversation, getRecord, deleteRecord, listRecords, recordKey } from './library.js';
 import { searchRecords, tokenize } from './search.js';
@@ -54,14 +54,14 @@ const commands = {
     };
   },
 
-  async zip(tab, { indices = null } = {}) {
+  // limit: only the first N files (quick runs on chats with many files).
+  async zip(tab, { indices = null, limit = 0 } = {}) {
     const conversation = await readConversation(tab);
     const started = Date.now();
+    let planned = 0;
+    const download = tabDownloader(tab.id);
     const result = await buildFullPackage(conversation, indices, {
-      download: async (source) => {
-        const [run] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: downloadInPage, args: [source, MAX_FILE_BYTES] });
-        return run?.result || { ok: false, error: 'no result' };
-      }
+      download: (source) => (limit && (planned += 1) > limit ? Promise.resolve({ ok: false, error: 'skipped by test limit' }) : download(source))
     });
     const zipBytes = result.parts.reduce((sum, part) => sum + part.length, 0);
     return {

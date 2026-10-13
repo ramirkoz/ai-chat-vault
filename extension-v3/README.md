@@ -79,7 +79,7 @@ Adding a platform means adding one adapter file with `matches`, `conversationIdF
 ## Tests
 
 ```bash
-node --test tests/v3/platforms.test.mjs tests/v3/core.test.mjs
+node --test tests/v3/*.test.mjs
 ```
 
 ## Not in this preview yet

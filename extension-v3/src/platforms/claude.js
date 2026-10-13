@@ -46,9 +46,48 @@ export async function fetchRaw(conversationId) {
     lastStatus = response.status;
     if (response.ok) {
       const data = await response.json();
-      // The organization is needed later to download sandbox files.
-      data.__orgId = org.uuid;
-      return { ok: true, status: response.status, data };
+      // Only the fields the normalizer reads leave the page: tool results and
+      // thinking can be megabytes and freeze the tab when transferred.
+      const keepToolInput = (block) => (block.name === 'create_file' || /artifact/i.test(String(block.name || ''))
+        ? { path: block.input?.path, file_text: block.input?.file_text, content: block.input?.content, title: block.input?.title, type: block.input?.type, language: block.input?.language }
+        : undefined);
+      const slimBlock = (block) => {
+        if (!block || typeof block !== 'object') return null;
+        if (block.type === 'text') return { type: 'text', text: block.text };
+        if (block.type === 'tool_use') return { type: 'tool_use', name: block.name, input: keepToolInput(block) };
+        return { type: block.type };
+      };
+      const slimFile = (file) => ({
+        file_kind: file.file_kind, file_name: file.file_name, file_uuid: file.file_uuid, size_bytes: file.size_bytes, path: file.path,
+        preview_url: file.preview_url, thumbnail_url: file.thumbnail_url,
+        preview_asset: file.preview_asset ? { url: file.preview_asset.url } : undefined,
+        document_asset: file.document_asset ? { url: file.document_asset.url } : undefined
+      });
+      return {
+        ok: true,
+        status: response.status,
+        data: {
+          uuid: data.uuid,
+          name: data.name,
+          model: data.model,
+          created_at: data.created_at,
+          updated_at: data.updated_at,
+          current_leaf_message_uuid: data.current_leaf_message_uuid,
+          // The organization is needed later to download sandbox files.
+          __orgId: org.uuid,
+          chat_messages: (data.chat_messages || []).map((message) => ({
+            uuid: message.uuid,
+            parent_message_uuid: message.parent_message_uuid,
+            sender: message.sender,
+            index: message.index,
+            created_at: message.created_at,
+            text: Array.isArray(message.content) && message.content.length ? '' : message.text,
+            content: (message.content || []).map(slimBlock),
+            attachments: (message.attachments || []).map((item) => ({ file_name: item.file_name, file_size: item.file_size, extracted_content: item.extracted_content })),
+            files: (message.files || []).map(slimFile)
+          }))
+        }
+      };
     }
   }
   return { ok: false, status: lastStatus };
