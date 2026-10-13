@@ -13,4 +13,7 @@ export function platformById(id) {
   return platforms.find((platform) => platform.id === id) || null;
 }
 
+// Host permissions to request (chat sites plus file hosts).
 export const allOrigins = platforms.flatMap((platform) => platform.origins);
+// Only the chat pages themselves (for content scripts and tab queries).
+export const chatOrigins = platforms.flatMap((platform) => platform.chatOrigins || platform.origins);

@@ -110,6 +110,25 @@ function base64Into(target, offset, base64) {
   return binary.length;
 }
 
+export async function fetchInExtension(url) {
+  try {
+    let response;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      response = await fetch(url, { credentials: 'include' });
+      if (![429, 500, 502, 503, 504].includes(response.status) || attempt === 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1) ** 2));
+    }
+    if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
+    const blob = await response.blob();
+    if (blob.size > MAX_FILE_BYTES) return { ok: false, error: `too-large ${blob.size}` };
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    return { ok: true, bytes, crc: crc32Update(0, bytes), mime: blob.type, name: '' };
+  } catch (error) {
+    // Most often: the host permission for the file host was not granted.
+    return { ok: false, error: String(error?.message || error) };
+  }
+}
+
 // Downloader bound to one chat tab; returns { ok, bytes, crc, mime, name } or { ok: false, error }.
 export function tabDownloader(tabId) {
   const run = async (func, args) => {
@@ -117,6 +136,9 @@ export function tabDownloader(tabId) {
     return result?.result;
   };
   return async (source) => {
+    // Hosts without CORS for the chat page (Gemini images) are fetched by the
+    // extension itself, which has host permission for them.
+    if (source.fetchFrom === 'extension') return fetchInExtension(source.url);
     const staged = await run(stageInPage, [source, MAX_FILE_BYTES]);
     if (!staged?.ok) return { ok: false, error: staged?.error || 'no result' };
     try {

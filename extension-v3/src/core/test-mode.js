@@ -1,4 +1,4 @@
-import { allOrigins } from '../platforms/index.js';
+import { chatOrigins } from '../platforms/index.js';
 
 // Test mode lets an automated tester (for example Claude in Chrome) drive the
 // extension from a chat page. Off by default, switched on by the user in the side
@@ -25,14 +25,14 @@ export async function enableTestMode(minutes = 60) {
   if (!existing.length) {
     await chrome.scripting.registerContentScripts([{
       id: SCRIPT_ID,
-      matches: allOrigins,
+      matches: chatOrigins,
       js: ['src/page/test-bridge.js'],
       runAt: 'document_idle',
       persistAcrossSessions: false
     }]);
   }
   // Already open chat tabs get the bridge without a reload.
-  const tabs = await chrome.tabs.query({ url: allOrigins });
+  const tabs = await chrome.tabs.query({ url: chatOrigins });
   await Promise.all(tabs.map((tab) => chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/page/test-bridge.js'] }).catch(() => {})));
   return until;
 }

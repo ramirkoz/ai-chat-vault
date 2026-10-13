@@ -18,6 +18,7 @@
     "https://chat.openai.com/*",
     "https://claude.ai/*",
     "https://gemini.google.com/*",
+    "https://*.googleusercontent.com/*",
     "https://grok.com/*"
   ],
   "action": {

@@ -2,7 +2,9 @@ import { cleanText, escapeUserMarkdown, finalizeConversation, toIso } from '../c
 
 export const id = 'gemini';
 export const label = 'Gemini';
-export const origins = ['https://gemini.google.com/*'];
+// googleusercontent.com: uploaded and generated images are downloaded from there.
+export const origins = ['https://gemini.google.com/*', 'https://*.googleusercontent.com/*'];
+export const chatOrigins = ['https://gemini.google.com/*'];
 export const newChatUrl = 'https://gemini.google.com/app';
 
 export function matches(url) {
@@ -69,19 +71,36 @@ export function parseBatchexecute(text) {
 
 const at = (value, ...path) => path.reduce((node, key) => (Array.isArray(node) ? node[key] : undefined), value);
 
-// Uploaded and generated images are googleusercontent URLs somewhere inside the
-// turn. Not verified live (no Gemini chat with images was available).
+const GOOGLE_CONTENT = /^https:\/\/[a-z0-9.-]*googleusercontent\.com\//i;
+
+// The URL in the API serves a 512 px preview; "=s0" returns the original bytes
+// (verified 2026-10-13: 1280×934, 172 912 B instead of 512×374, 63 351 B).
+export const originalImageUrl = (url) => (/=[a-z0-9-]+$/i.test(url) ? url.replace(/=[a-z0-9-]+$/i, '=s0') : `${url}=s0`);
+
+// Uploaded and generated images. An upload entry looks like
+// [null, 1, "photo.jpg", "https://lh3.googleusercontent.com/gg/…", null, token, …, "image/jpeg", …, [w, h, bytes]];
+// the same entry appears twice (original and display copy), so URLs are de-duplicated.
+// googleusercontent.com sends no CORS headers to gemini.google.com, so the extension
+// downloads these itself (host permission) instead of the page.
 function imageAssets(node) {
-  const urls = new Set();
+  const byUrl = new Map();
   const walk = (value) => {
-    if (typeof value === 'string') {
-      if (/^https:\/\/[a-z0-9.-]*googleusercontent\.com\//i.test(value)) urls.add(value);
-    } else if (Array.isArray(value)) {
-      value.forEach(walk);
+    if (!Array.isArray(value)) {
+      if (typeof value === 'string' && GOOGLE_CONTENT.test(value) && !byUrl.has(value)) byUrl.set(value, {});
+      return;
     }
+    if (typeof value[2] === 'string' && typeof value[3] === 'string' && GOOGLE_CONTENT.test(value[3])) {
+      byUrl.set(value[3], { name: value[2], mime: typeof value[11] === 'string' ? value[11] : '', size: Number(at(value, 15, 2)) || 0 });
+    }
+    value.forEach(walk);
   };
   walk(node);
-  return [...urls].map((url, index) => ({ name: `image-${index + 1}.png`, mime: '', size: 0, source: { type: 'url', url } }));
+  return [...byUrl.entries()].map(([url, meta], index) => ({
+    name: cleanText(meta.name) || `image-${index + 1}.jpg`,
+    mime: meta.mime || '',
+    size: meta.size || 0,
+    source: { type: 'url', url: originalImageUrl(url), fetchFrom: 'extension' }
+  }));
 }
 
 export function normalize(rawText, page = {}) {
@@ -94,8 +113,19 @@ export function normalize(rawText, page = {}) {
     const [conversationId, responseId] = Array.isArray(at(turn, 0)) ? at(turn, 0) : [];
     const createdAt = toIso(Number(at(turn, 4, 0) || 0));
     const userText = cleanText(at(turn, 2, 0, 0));
-    if (userText) {
-      messages.push({ role: 'user', ids: [String(responseId || conversationId || '')], text: userText, markdown: escapeUserMarkdown(userText), assets: imageAssets(at(turn, 2)), createdAt });
+    const userAssets = imageAssets(at(turn, 2));
+    // A message can be just an image, with no text.
+    if (userText || userAssets.length) {
+      const markdown = [userText ? escapeUserMarkdown(userText) : '', userAssets.map((asset) => `🖼 ${asset.name}`).join('\n')].filter(Boolean).join('\n\n');
+      messages.push({
+        role: 'user',
+        ids: [String(responseId || conversationId || '')],
+        text: userText || userAssets.map((asset) => asset.name).join(', '),
+        markdown,
+        attachments: userAssets.map((asset) => ({ name: asset.name })),
+        assets: userAssets,
+        createdAt
+      });
     }
     // The first candidate is the one shown unless the user picked another draft.
     const candidates = Array.isArray(at(turn, 3, 0)) ? at(turn, 3, 0) : [];

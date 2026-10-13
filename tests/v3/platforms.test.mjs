@@ -86,6 +86,20 @@ test('Gemini: batchexecute envelope, chronological order', () => {
   assert.equal(result.warning, '');
 });
 
+test('Gemini: image-only message with the original image as a file', () => {
+  // Shape observed live on 2026-10-13: the upload entry appears twice.
+  const entry = [null, 1, 'photo.jpg', 'https://lh3.googleusercontent.com/gg/TOKEN', null, 'opaque', null, null, 1, [1791901110, 0], null, 'image/jpeg', null, null, null, [1280, 934, 172868]];
+  const turn = [['c_conv', 'r_1'], null, [['', null, null, null, [[null, null, null, [entry], [entry]]]], 1], [[['rc_1', ['Nice photo.']]]], [1791901120, 0]];
+  const envelope = `)]}'\n\n1\n${JSON.stringify([['wrb.fr', 'hNvQHb', JSON.stringify([[turn], null, null, []]), null, null, null, 'generic']])}\n`;
+  const result = gemini.normalize(envelope, { id: 'conv' });
+  assert.equal(roles(result), 'ua', 'the image-only user message is kept');
+  const [user] = result.messages;
+  assert.equal(user.markdown, '🖼 photo.jpg');
+  assert.equal(user.assets.length, 1, 'duplicate entries collapse to one file');
+  assert.deepEqual(user.assets[0], { name: 'photo.jpg', mime: 'image/jpeg', size: 172868, source: { type: 'url', url: 'https://lh3.googleusercontent.com/gg/TOKEN=s0', fetchFrom: 'extension' } });
+  assert.equal(gemini.originalImageUrl('https://lh3.googleusercontent.com/rd-gg/X=s512'), 'https://lh3.googleusercontent.com/rd-gg/X=s0');
+});
+
 test('Grok: active thread through response nodes', () => {
   const data = {
     nodes: { responseNodes: [

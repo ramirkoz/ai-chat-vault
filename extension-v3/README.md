@@ -42,7 +42,7 @@ Format **ZIP with files** downloads every file the selected messages reference a
 | ChatGPT | uploads and images (`files/download`), generated images, `sandbox:/mnt/data/…` files (`interpreter/download`); project chats retry with `gizmo_id` | descriptor + bytes for an upload and a sandbox ZIP |
 | Claude | text attachments (from the API), images (preview, webp), PDFs (original), uploads and created files (`wiggle/download-file`) | PDF 82 604/82 604 B, upload 50 160/50 160 B, created file, image preview |
 | Grok | uploads and generated images on `assets.grok.com` | 221 626 B ZIP upload |
-| Gemini | googleusercontent images found in the turn | **not verified** (no chat with images) |
+| Gemini | uploaded and generated images, original size (`=s0`), fetched by the extension because googleusercontent.com sends no CORS headers to the chat page | upload entry structure and original 1280×934 / 172 912 B on a real chat |
 
 Identical files are stored once (SHA-256). Limits: 200 MB per file, 700 MB per archive.
 
