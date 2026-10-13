@@ -112,6 +112,8 @@ async function attachScreenshotToChatGpt(dataUrl, filename) {
   const composerSelectors = [
     '#prompt-textarea',
     '[data-testid="prompt-textarea"]',
+    '[contenteditable="true"][data-composer-markdown]',
+    '[contenteditable="true"][role="textbox"]',
     'form textarea',
     'form [contenteditable="true"]',
     'main textarea',

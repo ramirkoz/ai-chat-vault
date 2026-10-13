@@ -22,6 +22,7 @@ const cancelExportButton = document.getElementById('cancel-export');
 
 let activeTabId = null;
 let messages = [];
+let readerWarning = '';
 let busy = false;
 let activeZipExportId = null;
 let exportStartedAt = 0;
@@ -83,6 +84,9 @@ async function loadOpenThread() {
     }
 
     messages = response.messages;
+    readerWarning = response.warning
+      ? (formatMessage('partialThreadWarning', [response.warning]) || `ChatGPT API unavailable (${response.warning}); messages were read from the page and may be incomplete.`)
+      : '';
     threadTitleNode.textContent = response.title || chrome.i18n.getMessage('fallbackThreadTitle') || 'ChatGPT conversation';
     renderMessages();
     selectionSection.hidden = false;
@@ -291,7 +295,8 @@ function updateSelectionState() {
   if (selected === 0) {
     setStatus(chrome.i18n.getMessage('emptySelectionStatus') || 'Select at least one message.', 'error');
   } else {
-    setStatus(formatMessage('readySelectionStatus', [messages.length]) || `${messages.length} messages found.`);
+    const ready = formatMessage('readySelectionStatus', [messages.length]) || `${messages.length} messages found.`;
+    setStatus(readerWarning ? `${ready} ${readerWarning}` : ready, readerWarning ? 'error' : '');
   }
 }
 

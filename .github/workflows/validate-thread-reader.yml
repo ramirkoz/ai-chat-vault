@@ -1,0 +1,32 @@
+name: Validate thread reader
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Check syntax of every extension script
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in extension/*.js; do node --check "$file"; done
+          echo "JavaScript syntax: PASS"
+
+      - name: Run thread reader regression test
+        run: node tests/thread-reader.test.mjs

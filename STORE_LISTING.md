@@ -1,4 +1,4 @@
-# Chrome Web Store listing — GPT Project & Memory Tools 2.32.1
+# Chrome Web Store listing — GPT Project & Memory Tools 2.33.0
 
 ## Product name
 

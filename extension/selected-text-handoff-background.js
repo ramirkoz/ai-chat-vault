@@ -89,6 +89,8 @@ async function insertIntoChatGptComposer(text) {
   const selectors = [
     '#prompt-textarea',
     '[data-testid="prompt-textarea"]',
+    '[contenteditable="true"][data-composer-markdown]',
+    '[contenteditable="true"][role="textbox"]',
     'form textarea',
     'form [contenteditable="true"]',
     'main textarea',

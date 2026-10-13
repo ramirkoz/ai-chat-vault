@@ -1,3 +1,18 @@
+## 2.33.0
+
+- Fixed the main export regression caused by the September 2026 ChatGPT UI: the reader found only one "message" (the whole page text) because the legacy `article` / `[data-message-author-role]` markup is gone and the thread is now virtualized.
+- The open conversation is now read from ChatGPT's own conversation API in the user's session (`/backend-api/conversation/{id}`), following the active branch from `current_node`. Abandoned edit/regenerate branches are not exported.
+- Messages are grouped into turns exactly like the UI: one user message, then one assistant answer. Tool calls, tool output, hidden reasoning and context messages are not exported as text, but their message ids stay bound to the turn.
+- Inline citation markers are replaced by their markdown source links; canvas documents created in a turn are exported as sections; user attachments are listed by name.
+- Fallbacks when the API is unavailable (for example HTTP 429): the new-UI DOM reader (`[data-chatgpt-search-unit-key]` units inside the visible thread, with a top-to-bottom scroll sweep), then the legacy DOM reader. Hidden copies of previously opened chats are ignored. The side panel now warns when the page fallback was used.
+- The silent "whole page as one message" fallback was removed; a failed read now reports an explicit error.
+- Conversation payloads are cached for 90 seconds so listing and exporting the same chat cost one API request; a single 429 is retried after `Retry-After`.
+- Full ZIP: attachment hints are re-bound to transcript turns by API message id, so files land next to the right turn and files from other branches are dropped.
+- Message navigation finds the target by message id in the new UI and ignores hidden cached threads.
+- Automatic project memory: new-chat detection works again (it previously treated every project chat as new), and tool-call messages and citation markers are no longer stored in project memory.
+- Composer detection updated for the new `[contenteditable][data-composer-markdown]` editor in memory insertion and handoffs; memory insertion uses `insertText` so the editor state updates.
+- Added `tests/thread-reader.test.mjs` and a CI workflow that checks syntax of every extension script and runs the reader regression test.
+
 ## 2.32.0
 
 - Final hardening release for Full ZIP export.

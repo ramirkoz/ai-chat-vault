@@ -363,6 +363,9 @@
       if (!['user','assistant'].includes(role)) continue;
       const metadata=message?.metadata || {};
       if (metadata?.is_visually_hidden_from_conversation || metadata?.is_hidden) continue;
+      // 2.33.0: tool calls (search, connectors, code execution) are assistant messages
+      // addressed to a tool; they are not part of the visible answer.
+      if (role==='assistant' && String(message?.recipient || 'all')!=='all') continue;
       const text=visibleMessageText(message);
       if (!text) continue;
       messages.push({role,text});
@@ -388,7 +391,10 @@
       }
     };
     walk(content?.parts ?? content?.text ?? content);
-    return out.filter(Boolean).join('\n\n').replace(/\n{3,}/g,'\n\n').trim();
+    return out.filter(Boolean).join('\n\n')
+      .replace(/\ue200[^\ue201]*\ue201/g,'')
+      .replace(/[\ue200-\ue2ff]/g,'')
+      .replace(/\n{3,}/g,'\n\n').trim();
   }
 
   async function snapshotTab(tabId, context) {

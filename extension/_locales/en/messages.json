@@ -320,6 +320,12 @@
   "wrongPageError": {
     "message": "Open a ChatGPT conversation first."
   },
+  "partialThreadWarning": {
+    "message": "The ChatGPT API was unavailable ($REASON$), so messages were read from the page and may be incomplete.",
+    "placeholders": {
+      "reason": { "content": "$1" }
+    }
+  },
   "noMessagesError": {
     "message": "No messages were found in the open conversation."
   },
