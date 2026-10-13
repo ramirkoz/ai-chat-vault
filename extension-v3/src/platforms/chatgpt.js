@@ -130,11 +130,38 @@ function canvasMarkdown(message) {
   }
 }
 
+// file-service://file-XXX and sediment://file_XXX both resolve through files/download.
+const pointerFileId = (pointer) => String(pointer || '').split('://')[1] || '';
+
+function fileAsset(fileId, name, mime, size, context) {
+  return {
+    name: cleanText(name) || `${fileId}.bin`,
+    mime: mime || '',
+    size: Number(size) || 0,
+    source: { type: 'chatgpt-file', fileId, conversationId: context.conversationId, gizmoId: context.gizmoId }
+  };
+}
+
+function sandboxAssets(text, messageId, context) {
+  const assets = [];
+  for (const match of String(text || '').matchAll(/sandbox:(\/mnt\/data\/[^)\s\]"'<>]+)/g)) {
+    const path = decodeURI(match[1]);
+    assets.push({
+      name: path.split('/').pop(),
+      mime: '',
+      size: 0,
+      source: { type: 'chatgpt-sandbox', path, messageId, conversationId: context.conversationId }
+    });
+  }
+  return assets;
+}
+
 // One user message is one turn; everything until the next user message (assistant
 // text, tool calls, tool output, reasoning) is one assistant turn, like the UI.
 export function normalize(data, page = {}) {
   const turns = [];
   let assistant = null;
+  const context = { conversationId: String(data?.conversation_id || page.id || ''), gizmoId: String(data?.gizmo_id || '') };
 
   for (const message of branchMessages(data)) {
     const role = String(message?.author?.role || '');
@@ -153,12 +180,20 @@ export function normalize(data, page = {}) {
         text ? escapeUserMarkdown(text) : '',
         [...attachments.map((item) => `📎 ${item.name}`), ...Array(extraImages).fill('🖼 [Image]')].join('\n')
       ].filter(Boolean).join('\n\n');
-      turns.push({ role: 'user', ids: [messageId], text, markdown, attachments, createdAt: toIso(message?.create_time) });
+      const assets = new Map();
+      for (const item of Array.isArray(message?.metadata?.attachments) ? message.metadata.attachments : []) {
+        if (item?.id) assets.set(item.id, fileAsset(item.id, item.name, item.mime_type, item.size, context));
+      }
+      parts(message).filter((part) => part?.content_type === 'image_asset_pointer').forEach((part, index) => {
+        const fileId = pointerFileId(part.asset_pointer);
+        if (fileId && !assets.has(fileId)) assets.set(fileId, fileAsset(fileId, `image-${index + 1}.png`, 'image/png', part.size_bytes, context));
+      });
+      turns.push({ role: 'user', ids: [messageId], text, markdown, attachments, assets: [...assets.values()], createdAt: toIso(message?.create_time) });
       continue;
     }
 
     if (!assistant) {
-      assistant = { role: 'assistant', ids: [], pieces: [], createdAt: toIso(message?.create_time) };
+      assistant = { role: 'assistant', ids: [], pieces: [], assets: [], createdAt: toIso(message?.create_time) };
       turns.push(assistant);
     }
     if (messageId) assistant.ids.push(messageId);
@@ -169,11 +204,16 @@ export function normalize(data, page = {}) {
     if (role === 'assistant' && recipient === 'all' && (type === 'text' || type === 'multimodal_text')) {
       const text = cleanText(applyContentReferences(stringParts(message), message));
       if (text) assistant.pieces.push(text);
+      assistant.assets.push(...sandboxAssets(text, messageId, context));
     } else if (role === 'assistant' && type === 'code') {
       const canvas = canvasMarkdown(message);
       if (canvas) assistant.pieces.push(canvas);
     } else if (role === 'tool' && imageCount(message)) {
       assistant.pieces.push('🖼 [Image]');
+      parts(message).filter((part) => part?.content_type === 'image_asset_pointer').forEach((part) => {
+        const fileId = pointerFileId(part.asset_pointer);
+        if (fileId) assistant.assets.push(fileAsset(fileId, `generated-${assistant.assets.length + 1}.png`, 'image/png', part.size_bytes, context));
+      });
     }
   }
 
@@ -182,10 +222,12 @@ export function normalize(data, page = {}) {
     if (turn.role === 'assistant') {
       const markdown = cleanText(turn.pieces.join('\n\n'));
       if (!markdown) {
-        messages[messages.length - 1]?.ids.push(...turn.ids);
+        const previous = messages[messages.length - 1];
+        previous?.ids.push(...turn.ids);
+        previous?.assets?.push(...turn.assets);
         continue;
       }
-      messages.push({ role: 'assistant', ids: turn.ids, markdown, text: markdown, createdAt: turn.createdAt });
+      messages.push({ role: 'assistant', ids: turn.ids, markdown, text: markdown, assets: turn.assets, createdAt: turn.createdAt });
     } else {
       messages.push(turn);
     }

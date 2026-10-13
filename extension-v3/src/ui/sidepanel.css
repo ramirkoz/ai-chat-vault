@@ -78,3 +78,4 @@ select, input[type="text"], input[type="search"] {
 .library .excerpt { margin: 4px 0; font-size: 12px; white-space: pre-wrap; max-height: 7.5em; overflow: hidden; }
 .library .row { margin-top: 4px; }
 .footer { justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 8px; }
+.test-mode { gap: 8px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 8px; }

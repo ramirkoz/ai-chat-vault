@@ -8,7 +8,14 @@ export function selectMessages(conversation, indices) {
   return conversation.messages.filter((message) => wanted.has(message.index));
 }
 
-export function toMarkdown(conversation, indices, exportedAt = new Date().toISOString()) {
+// links: { [messageIndex]: [{ name, path } | { name, missing: true }] } from the full ZIP.
+const markdownLinks = (items = []) => items
+  .map((item) => (item.missing
+    ? `📎 ${item.name} _(not downloaded, see MISSING_FILES.txt)_`
+    : `📎 [${item.name.replace(/[[\]]/g, '')}](${encodeURI(item.path)})`))
+  .join('\n');
+
+export function toMarkdown(conversation, indices, exportedAt = new Date().toISOString(), { links = null } = {}) {
   const messages = selectMessages(conversation, indices);
   const lines = [
     `# ${conversation.title}`,
@@ -20,7 +27,9 @@ export function toMarkdown(conversation, indices, exportedAt = new Date().toISOS
     ''
   ];
   for (const message of messages) {
-    lines.push(`## ${roleLabel(conversation, message.role)}`, '', message.markdown, '', '---', '');
+    lines.push(`## ${roleLabel(conversation, message.role)}`, '', message.markdown, '');
+    if (links?.[message.index]?.length) lines.push(markdownLinks(links[message.index]), '');
+    lines.push('---', '');
   }
   return lines.join('\n');
 }
@@ -30,7 +39,11 @@ export function toJson(conversation, indices, exportedAt = new Date().toISOStrin
     format: 'ai-chat-memory-tools/conversation@1',
     exportedAt,
     ...conversation,
-    messages: selectMessages(conversation, indices)
+    // Download routes are internal; the export keeps only what the files are.
+    messages: selectMessages(conversation, indices).map(({ assets = [], ...message }) => ({
+      ...message,
+      files: assets.map((asset) => ({ name: asset.name, mime: asset.mime || '', size: asset.size || 0 }))
+    }))
   }, null, 2);
 }
 
@@ -93,9 +106,14 @@ export function markdownToHtml(markdown) {
   return blocks.join('\n');
 }
 
-export function toHtml(conversation, indices, exportedAt = new Date().toISOString()) {
+export function toHtml(conversation, indices, exportedAt = new Date().toISOString(), { links = null } = {}) {
   const messages = selectMessages(conversation, indices);
-  const sections = messages.map((message) => `<section class="message ${message.role}"><h2>${escapeHtml(roleLabel(conversation, message.role))}</h2>${markdownToHtml(message.markdown)}</section>`).join('\n');
+  const fileList = (items = []) => (items.length
+    ? `<ul class="files">${items.map((item) => (item.missing
+      ? `<li>📎 ${escapeHtml(item.name)} <em>(not downloaded)</em></li>`
+      : `<li>📎 <a href="${escapeHtml(encodeURI(item.path))}">${escapeHtml(item.name)}</a></li>`)).join('')}</ul>`
+    : '');
+  const sections = messages.map((message) => `<section class="message ${message.role}"><h2>${escapeHtml(roleLabel(conversation, message.role))}</h2>${markdownToHtml(message.markdown)}${fileList(links?.[message.index])}</section>`).join('\n');
   return `<!doctype html>
 <html lang="und">
 <head>

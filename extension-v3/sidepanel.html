@@ -39,6 +39,7 @@
       <div class="actions">
         <div class="row">
           <select id="format" aria-label="Format">
+            <option value="zip" id="format-zip">ZIP</option>
             <option value="md">Markdown</option>
             <option value="html">HTML</option>
             <option value="json">JSON</option>
@@ -67,6 +68,11 @@
     <p id="library-status" class="status" role="status"></p>
     <button id="insert-context" class="primary" type="button" hidden></button>
     <ul id="library" class="library"></ul>
+    <label class="row test-mode">
+      <input id="test-mode" type="checkbox">
+      <span id="test-mode-label"></span>
+    </label>
+    <p id="test-mode-status" class="muted"></p>
     <div class="row footer">
       <button id="backup" type="button" class="link"></button>
       <button id="restore" type="button" class="link"></button>

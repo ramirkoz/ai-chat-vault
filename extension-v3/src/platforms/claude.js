@@ -44,7 +44,12 @@ export async function fetchRaw(conversationId) {
       { credentials: 'include' }
     );
     lastStatus = response.status;
-    if (response.ok) return { ok: true, status: response.status, data: await response.json() };
+    if (response.ok) {
+      const data = await response.json();
+      // The organization is needed later to download sandbox files.
+      data.__orgId = org.uuid;
+      return { ok: true, status: response.status, data };
+    }
   }
   return { ok: false, status: lastStatus };
 }
@@ -98,8 +103,43 @@ function blockMarkdown(block) {
   return '';
 }
 
+// Verified 2026-10-13: images → preview (webp), PDFs → document_asset (original
+// bytes), other uploads and created files → wiggle/download-file by sandbox path.
+function uploadAssets(message, context) {
+  const assets = [];
+  for (const item of Array.isArray(message.attachments) ? message.attachments : []) {
+    if (typeof item?.extracted_content === 'string' && item.extracted_content) {
+      assets.push({ name: cleanText(item.file_name) || 'attachment.txt', mime: 'text/plain', size: item.file_size || 0, source: { type: 'inline-text', text: item.extracted_content } });
+    }
+  }
+  for (const file of Array.isArray(message.files) ? message.files : []) {
+    const name = cleanText(file?.file_name) || 'file';
+    if (file?.file_kind === 'image') {
+      const url = file.preview_asset?.url || file.preview_url || file.thumbnail_url;
+      if (url) assets.push({ name, mime: '', size: 0, note: 'preview', source: { type: 'url', url } });
+    } else if (file?.file_kind === 'document' && file.document_asset?.url) {
+      assets.push({ name, mime: 'application/pdf', size: file.size_bytes || 0, source: { type: 'url', url: file.document_asset.url } });
+    } else if (file?.path) {
+      assets.push({ name, mime: '', size: file.size_bytes || 0, source: { type: 'claude-wiggle', path: file.path, ...context } });
+    }
+  }
+  return assets;
+}
+
+function createdFileAssets(message, context) {
+  return (Array.isArray(message.content) ? message.content : [])
+    .filter((block) => block?.type === 'tool_use' && block.name === 'create_file' && block.input?.path)
+    .map((block) => ({
+      name: String(block.input.path).split('/').pop(),
+      mime: '',
+      size: 0,
+      source: { type: 'claude-wiggle', path: block.input.path, fallbackText: String(block.input.file_text ?? ''), ...context }
+    }));
+}
+
 export function normalize(data, page = {}) {
   const messages = [];
+  const context = { orgId: String(data?.__orgId || ''), conversationId: String(data?.uuid || page.id || '') };
   for (const message of activeBranch(data)) {
     const role = message.sender === 'human' ? 'user' : 'assistant';
     const attachments = [
@@ -115,24 +155,27 @@ export function normalize(data, page = {}) {
       const text = cleanText(blocks.filter((block) => block?.type === 'text').map((block) => block.text).join('\n\n'));
       const markdown = [text ? escapeUserMarkdown(text) : '', attachments.map((item) => `📎 ${item.name}`).join('\n')]
         .filter(Boolean).join('\n\n');
-      messages.push({ role, ids: [message.uuid], text, markdown, attachments, createdAt: toIso(message.created_at) });
+      messages.push({ role, ids: [message.uuid], text, markdown, attachments, assets: uploadAssets(message, context), createdAt: toIso(message.created_at) });
       continue;
     }
 
     // Thinking, tool calls and tool results are folded away like in the UI.
     const markdown = cleanText(blocks.map(blockMarkdown).filter(Boolean).join('\n\n'));
+    const assets = [...uploadAssets(message, context), ...createdFileAssets(message, context)];
     const previous = messages[messages.length - 1];
     if (previous?.role === 'assistant') {
       previous.ids.push(message.uuid);
+      previous.assets.push(...assets);
       if (markdown) previous.markdown = cleanText(`${previous.markdown}\n\n${markdown}`);
       previous.text = previous.markdown;
       continue;
     }
     if (!markdown) {
       previous?.ids.push(message.uuid);
+      previous?.assets?.push(...assets);
       continue;
     }
-    messages.push({ role, ids: [message.uuid], markdown, text: markdown, attachments, createdAt: toIso(message.created_at) });
+    messages.push({ role, ids: [message.uuid], markdown, text: markdown, attachments, assets, createdAt: toIso(message.created_at) });
   }
 
   return finalizeConversation({

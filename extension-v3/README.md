@@ -25,6 +25,38 @@ Version 3.0 is a separate extension and does not touch 2.x data. Both can be ins
 - **Continue in…**: builds a transcript prompt from the selected messages (oldest messages are dropped first above 24 000 characters), opens a new chat in the chosen assistant and puts the text into its input. It is never sent automatically; the text is also copied to the clipboard as a fallback.
 - **Library tab**: saved chats from every assistant in one IndexedDB store, full-text search, platform filter, open/delete, JSON backup and restore. Search results can be inserted as a context block in front of the current message in any supported chat.
 
+## Full ZIP with files
+
+Format **ZIP with files** downloads every file the selected messages reference and packs:
+
+```
+<date>_<platform>_<title>/
+  conversation.md / .html / .json   transcript; each message links its files
+  files/…                           attachments, generated images, created files
+  manifest.json                     sizes, SHA-256, which message each file belongs to
+  MISSING_FILES.txt                 files that could not be downloaded (nothing is substituted)
+```
+
+| Platform | Files | Verified live (2026-10-13) |
+|---|---|---|
+| ChatGPT | uploads and images (`files/download`), generated images, `sandbox:/mnt/data/…` files (`interpreter/download`); project chats retry with `gizmo_id` | descriptor + bytes for an upload and a sandbox ZIP |
+| Claude | text attachments (from the API), images (preview, webp), PDFs (original), uploads and created files (`wiggle/download-file`) | PDF 82 604/82 604 B, upload 50 160/50 160 B, created file, image preview |
+| Grok | uploads and generated images on `assets.grok.com` | 221 626 B ZIP upload |
+| Gemini | googleusercontent images found in the turn | **not verified** (no chat with images) |
+
+Identical files are stored once (SHA-256). Limits: 200 MB per file, 700 MB per archive.
+
+## Test mode (automated testing)
+
+Library tab → **Test mode**. While on (60 minutes at most), a bridge on the four chat sites accepts commands from the page and runs them in the extension:
+
+```js
+window.postMessage({ source: 'acm-test', id: 1, command: 'read' }, location.origin);
+window.addEventListener('message', (e) => e.data?.source === 'acm-test-result' && console.log(e.data));
+```
+
+Commands: `ping`, `read`, `exports`, `zip`, `handoff`, `composer`, `library`. They return structural reports only (counts, roles, sizes, error reasons), never conversation text; `zip` builds the archive in memory without saving it, `library` removes the test record again.
+
 ## Layout
 
 ```
@@ -52,6 +84,5 @@ node --test tests/v3/platforms.test.mjs tests/v3/core.test.mjs
 
 ## Not in this preview yet
 
-- Full ZIP export with attachments (2.x feature) for the new platforms.
 - Automatic project memory (2.x auto-sync and first-message injection).
 - Grok long-thread and branch verification (only a short chat was available).

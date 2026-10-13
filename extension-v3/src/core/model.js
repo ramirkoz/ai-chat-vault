@@ -13,7 +13,9 @@
 //   ids,           // every platform message id folded into this turn
 //   markdown, text,
 //   createdAt,
-//   attachments: [{ name }]
+//   attachments: [{ name }],
+//   assets: [{ name, mime, size, source }]   // downloadable files for the full ZIP;
+//                                             // source is resolved by core/assets.js
 // }
 
 export const PLATFORM_LABELS = {
@@ -70,7 +72,8 @@ export function finalizeConversation(conversation) {
       markdown: cleanText(message.markdown || message.text),
       text: cleanText(message.text || message.markdown),
       createdAt: message.createdAt || '',
-      attachments: Array.isArray(message.attachments) ? message.attachments.filter((item) => item?.name) : []
+      attachments: Array.isArray(message.attachments) ? message.attachments.filter((item) => item?.name) : [],
+      assets: Array.isArray(message.assets) ? message.assets.filter((item) => item?.source) : []
     }));
   return {
     platform: conversation.platform,

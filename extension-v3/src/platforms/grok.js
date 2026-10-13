@@ -80,7 +80,20 @@ export function normalize(data, page = {}) {
       ? item.fileAttachmentsMetadata.map((file) => file?.fileName)
       : (Array.isArray(item.fileAttachmentAssetMetadata) ? item.fileAttachmentAssetMetadata : []).map((file) => file?.name);
     const attachments = metadata.map((name) => ({ name: cleanText(name || '') })).filter((file) => file.name);
-    const images = (Array.isArray(item.generatedImageUrls) ? item.generatedImageUrls : []).length;
+    const generated = Array.isArray(item.generatedImageUrls) ? item.generatedImageUrls : [];
+    const images = generated.length;
+    // Files are served from assets.grok.com/<fileUri> with the signed-in cookies
+    // (verified 2026-10-13).
+    const assetUrl = (uri) => (/^https?:\/\//i.test(uri) ? uri : `https://assets.grok.com/${String(uri).replace(/^\/+/, '')}`);
+    const fileMetadata = Array.isArray(item.fileAttachmentsMetadata) ? item.fileAttachmentsMetadata : [];
+    const assets = [
+      ...fileMetadata.filter((file) => file?.fileUri).map((file) => ({
+        name: cleanText(file.fileName) || 'attachment', mime: file.fileMimeType || '', size: 0, source: { type: 'url', url: assetUrl(file.fileUri) }
+      })),
+      ...[...generated, ...(Array.isArray(item.imageAttachments) ? item.imageAttachments : [])]
+        .filter((uri) => typeof uri === 'string' && uri)
+        .map((uri, index) => ({ name: uri.split('/').pop()?.split('?')[0] || `image-${index + 1}.jpg`, mime: '', size: 0, source: { type: 'url', url: assetUrl(uri) } }))
+    ];
     const markdown = [
       role === 'user' ? escapeUserMarkdown(text) : text,
       [...attachments.map((file) => `📎 ${file.name}`), ...Array(images).fill('🖼 [Image]')].join('\n')
@@ -91,7 +104,8 @@ export function normalize(data, page = {}) {
       text,
       markdown,
       createdAt: toIso(item.createTime),
-      attachments
+      attachments,
+      assets
     };
   });
   const meta = data?.meta?.conversation || data?.meta || {};

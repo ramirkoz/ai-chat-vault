@@ -5,6 +5,8 @@ import { buildHandoffPrompt, buildMemoryBlock } from '../core/handoff.js';
 import { saveConversation, listRecords, deleteRecord, exportLibrary, importLibrary } from '../core/library.js';
 import { searchRecords } from '../core/search.js';
 import { PLATFORM_LABELS } from '../core/model.js';
+import { buildFullPackage, downloadInPage, MAX_FILE_BYTES } from '../core/assets.js';
+import { enableTestMode, disableTestMode, isTestModeOn, testModeUntil } from '../core/test-mode.js';
 import { t } from './strings.js';
 
 const $ = (id) => document.getElementById(id);
@@ -53,6 +55,7 @@ function localize() {
   nodes.selectAll.textContent = t('selectAll');
   nodes.selectNone.textContent = t('selectNone');
   nodes.export.textContent = t('exportLabel');
+  document.getElementById('format-zip').textContent = t('formatZip');
   nodes.copy.textContent = t('copy');
   nodes.save.textContent = t('save');
   nodes.handoffNoteLabel.textContent = t('handoffNote');
@@ -202,9 +205,37 @@ async function download(content, filename, type) {
   }
 }
 
+async function exportFullZip(indices) {
+  const tabId = activeTab.id;
+  setBusy(true);
+  try {
+    const result = await buildFullPackage(conversation, indices, {
+      download: async (source) => {
+        const [run] = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: downloadInPage, args: [source, MAX_FILE_BYTES] });
+        return run?.result || { ok: false, error: 'no result' };
+      },
+      onProgress: ({ done, total, name }) => {
+        if (total) setStatus(nodes.status, t('zipProgress', { done, total, name }));
+      }
+    });
+    const url = URL.createObjectURL(new Blob(result.parts, { type: 'application/zip' }));
+    try {
+      await chrome.downloads.download({ url, filename: result.filename, saveAs: false, conflictAction: 'uniquify' });
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 120000);
+    }
+    const summary = t('zipDone', { included: result.included, missing: result.missing.length });
+    setStatus(nodes.status, summary, result.missing.length ? 'warn' : 'ok');
+  } finally {
+    setBusy(false);
+    updateSelection();
+  }
+}
+
 async function exportSelected() {
   const indices = selectedIndices();
   const format = nodes.format.value;
+  if (format === 'zip') return exportFullZip(indices);
   const content = format === 'json' ? toJson(conversation, indices) : format === 'html' ? toHtml(conversation, indices) : toMarkdown(conversation, indices);
   const type = format === 'json' ? 'application/json' : format === 'html' ? 'text/html' : 'text/markdown';
   await download(content, exportFilename(conversation, format), type);
@@ -375,6 +406,31 @@ async function restore(file) {
   setStatus(nodes.libraryStatus, t('restored', { count }), 'ok');
   await renderLibrary();
 }
+
+// ---------- test mode ----------
+
+const testModeBox = document.getElementById('test-mode');
+const testModeStatus = document.getElementById('test-mode-status');
+document.getElementById('test-mode-label').textContent = t('testMode');
+
+async function renderTestMode() {
+  const on = await isTestModeOn();
+  testModeBox.checked = on;
+  testModeStatus.textContent = on
+    ? t('testModeOn', { time: new Date(await testModeUntil()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })
+    : t('testModeOff');
+}
+
+testModeBox.addEventListener('change', async () => {
+  try {
+    if (testModeBox.checked) await enableTestMode(60);
+    else await disableTestMode();
+  } catch (error) {
+    setStatus(nodes.libraryStatus, String(error?.message || error), 'error');
+  }
+  await renderTestMode();
+});
+renderTestMode().catch(() => {});
 
 // ---------- wiring ----------
 

@@ -69,6 +69,21 @@ export function parseBatchexecute(text) {
 
 const at = (value, ...path) => path.reduce((node, key) => (Array.isArray(node) ? node[key] : undefined), value);
 
+// Uploaded and generated images are googleusercontent URLs somewhere inside the
+// turn. Not verified live (no Gemini chat with images was available).
+function imageAssets(node) {
+  const urls = new Set();
+  const walk = (value) => {
+    if (typeof value === 'string') {
+      if (/^https:\/\/[a-z0-9.-]*googleusercontent\.com\//i.test(value)) urls.add(value);
+    } else if (Array.isArray(value)) {
+      value.forEach(walk);
+    }
+  };
+  walk(node);
+  return [...urls].map((url, index) => ({ name: `image-${index + 1}.png`, mime: '', size: 0, source: { type: 'url', url } }));
+}
+
 export function normalize(rawText, page = {}) {
   const payload = typeof rawText === 'string' ? parseBatchexecute(rawText) : rawText;
   const turns = Array.isArray(at(payload, 0)) ? at(payload, 0) : [];
@@ -80,14 +95,14 @@ export function normalize(rawText, page = {}) {
     const createdAt = toIso(Number(at(turn, 4, 0) || 0));
     const userText = cleanText(at(turn, 2, 0, 0));
     if (userText) {
-      messages.push({ role: 'user', ids: [String(responseId || conversationId || '')], text: userText, markdown: escapeUserMarkdown(userText), createdAt });
+      messages.push({ role: 'user', ids: [String(responseId || conversationId || '')], text: userText, markdown: escapeUserMarkdown(userText), assets: imageAssets(at(turn, 2)), createdAt });
     }
     // The first candidate is the one shown unless the user picked another draft.
     const candidates = Array.isArray(at(turn, 3, 0)) ? at(turn, 3, 0) : [];
     const candidate = candidates[0];
     const answer = cleanText(at(candidate, 1, 0));
     if (answer) {
-      messages.push({ role: 'assistant', ids: [String(at(candidate, 0) || responseId || '')], text: answer, markdown: answer, createdAt });
+      messages.push({ role: 'assistant', ids: [String(at(candidate, 0) || responseId || '')], text: answer, markdown: answer, assets: imageAssets(candidate), createdAt });
     }
   }
 

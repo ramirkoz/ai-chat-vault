@@ -29,4 +29,4 @@ jobs:
           node -e "const m=require('./extension-v3/manifest.json'); if(m.manifest_version!==3||!m.side_panel||!m.background.type) process.exit(1); console.log('manifest', m.version)"
 
       - name: Run adapter and core tests
-        run: node --test tests/v3/platforms.test.mjs tests/v3/core.test.mjs
+        run: node --test tests/v3/platforms.test.mjs tests/v3/core.test.mjs tests/v3/package.test.mjs tests/v3/sidepanel-smoke.test.mjs
