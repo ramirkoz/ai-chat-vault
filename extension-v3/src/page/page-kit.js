@@ -319,7 +319,10 @@
         const nested = [...unit.querySelectorAll('[data-message-id]')].map((node) => node.getAttribute('data-message-id'));
         const wrapper = unit.closest('[id^="response-"]')?.id;
         return [...own, ...nested, unit.id?.replace(/^response-/, ''), wrapper?.replace(/^response-/, '')].some((id) => id && ids.has(id));
-      }) || (fingerprint.length > 8 ? units.find((unit) => normalize(unit.innerText).includes(fingerprint)) : null);
+      }) || (fingerprint.length > 8 ? units.find((unit) => normalize(unit.innerText).includes(fingerprint)) : null)
+        // A message without text (an image only) is found by position when the
+        // whole chat is on the page.
+        || (units.length === descriptor.total ? units[descriptor.index] : null);
     };
     let target = find();
     if (!target) {
