@@ -2,7 +2,7 @@
 // Exposes globalThis.__aiChatKit; functions passed to chrome.scripting.executeScript
 // call into it because they cannot import modules.
 (() => {
-  if (globalThis.__aiChatKit?.version === 3) return;
+  if (globalThis.__aiChatKit?.version === 4) return;
 
   const cleanText = (value) => String(value || '')
     .replace(/\u00a0/g, ' ')
@@ -348,5 +348,5 @@
     return { found: true };
   }
 
-  globalThis.__aiChatKit = { version: 3, readDom, insertIntoComposer, waitForComposer, attachImage, locateMessage, toMarkdown, cleanText };
+  globalThis.__aiChatKit = { version: 4, readDom, insertIntoComposer, waitForComposer, attachImage, locateMessage, toMarkdown, cleanText };
 })();
