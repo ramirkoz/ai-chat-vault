@@ -7,6 +7,8 @@ import { toMarkdown, toHtml, toJson } from './export.js';
 import { platforms, platformFor, platformById } from '../platforms/index.js';
 import { isTestModeOn, testModeUntil } from './test-mode.js';
 import { runProjectSync, contextForDraft } from './memory-service.js';
+import { insertTextInTab } from './deliver.js';
+import { savePrompt, listPrompts, filterPrompts, deletePrompt } from './prompts.js';
 
 // Structural summary only: no message text leaves the extension in test mode.
 function summarize(conversation) {
@@ -32,7 +34,70 @@ const extensionOf = (name) => (String(name).includes('.') ? String(name).split('
 
 const commands = {
   async ping() {
-    return { version: chrome.runtime.getManifest().version, testModeUntil: new Date(await testModeUntil()).toISOString() };
+    return { version: chrome.runtime.getManifest().version, id: chrome.runtime.id, testModeUntil: new Date(await testModeUntil()).toISOString() };
+  },
+
+  // "Show in chat": scrolls to message N of this chat and highlights it.
+  async locate(tab, { index = 0 } = {}) {
+    const conversation = await readConversation(tab);
+    const message = conversation.messages[index];
+    if (!message) return { found: false, error: 'no-such-message', total: conversation.messages.length };
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/page/page-kit.js'] });
+    const [run] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      args: [platformFor(tab.url).dom, { ids: message.ids, text: message.text, index, total: conversation.messages.length }],
+      func: async (config, descriptor) => {
+        const result = await globalThis.__aiChatKit.locateMessage(config, descriptor);
+        return { ...result, kitVersion: globalThis.__aiChatKit.version };
+      }
+    });
+    return run?.result;
+  },
+
+  // Prompt insertion appends to the current draft; reports lengths only.
+  async 'composer-append'(tab, { text = '[AI Chat Vault test prompt]' } = {}) {
+    const platform = platformFor(tab.url);
+    const length = async () => {
+      const [run] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        args: [platform.composerSelectors],
+        func: (selectors) => {
+          for (const selector of selectors) {
+            const node = [...document.querySelectorAll(selector)].find((item) => item.getClientRects().length);
+            if (node) return ('value' in node ? node.value : node.innerText).trim().length;
+          }
+          return -1;
+        }
+      });
+      return run?.result;
+    };
+    const before = await length();
+    const result = await insertTextInTab(tab.id, platform, text, 'append');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return { ...result, before, after: await length(), inserted: text.length };
+  },
+
+  async prompts() {
+    const saved = await savePrompt({ title: 'AI Chat Vault test', content: 'test content' });
+    const found = filterPrompts(await listPrompts(), 'chat vault test').some((prompt) => prompt.id === saved.id);
+    await deletePrompt(saved.id);
+    const left = (await listPrompts()).some((prompt) => prompt.id === saved.id);
+    return { found, removed: !left, total: (await listPrompts()).length };
+  },
+
+  async migration() {
+    const { migratedFromV2: state = null } = await chrome.storage.local.get('migratedFromV2');
+    const menus = await new Promise((resolve) => chrome.contextMenus.update('acv-site', {}, () => resolve(!chrome.runtime.lastError)));
+    return { state, contextMenu: menus, libraryRecords: (await listRecords()).length };
+  },
+
+  // PDF: opens the print page for this chat in a new tab.
+  async print(tab) {
+    const conversation = await readConversation(tab);
+    const token = crypto.randomUUID();
+    await chrome.storage.session.set({ [`print:${token}`]: { html: toHtml(conversation, null), title: conversation.title } });
+    const opened = await chrome.tabs.create({ url: chrome.runtime.getURL(`print.html?token=${token}`), active: false });
+    return { tabId: opened.id, htmlBytes: toHtml(conversation, null).length };
   },
 
   async permissions() {

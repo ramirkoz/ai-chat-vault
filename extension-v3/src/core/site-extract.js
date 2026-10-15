@@ -20,10 +20,26 @@ export function extractReadableWebpage(maxLength) {
     '[class*="social" i]', '[class*="share" i]'
   ];
 
+  // Collapsed menus and dropdowns (e.g. Wikipedia's language list) are in the DOM
+  // but not on screen: mark them in the live page so the clone can drop them.
+  const HIDDEN = 'data-acv-hidden';
+  const marked = [];
+  for (const element of document.body?.querySelectorAll('*') || []) {
+    if (element.closest(`[${HIDDEN}]`)) continue;
+    const visible = typeof element.checkVisibility === 'function'
+      ? element.checkVisibility()
+      : getComputedStyle(element).display !== 'none';
+    if (!visible) {
+      element.setAttribute(HIDDEN, '');
+      marked.push(element);
+    }
+  }
   const clone = document.body?.cloneNode(true);
+  for (const element of marked) element.removeAttribute(HIDDEN);
   if (!(clone instanceof HTMLElement)) {
     return { title: document.title || '', url: location.href, text: '', truncated: false };
   }
+  clone.querySelectorAll(`[${HIDDEN}]`).forEach((node) => node.remove());
 
   for (const selector of removableSelectors) {
     try {
@@ -35,7 +51,7 @@ export function extractReadableWebpage(maxLength) {
 
   const candidates = [
     ...clone.querySelectorAll(
-      'article, main, [role="main"], .article, .post, .entry-content, .post-content, #content, .content'
+      'article, main, [role="main"], [itemprop="articleBody"], .mw-parser-output, .article, .post, .entry-content, .post-content, #content, .content'
     ),
     clone
   ];
