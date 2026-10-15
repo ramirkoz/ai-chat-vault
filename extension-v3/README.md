@@ -1,4 +1,4 @@
-# AI Chat Memory Tools 3.0 (preview)
+# AI Chat Vault 3.0
 
 One local tool for ChatGPT, Claude, Gemini and Grok: read the open conversation, export it, keep it in a searchable library, and continue it in another assistant. No server, no telemetry; everything stays in this browser profile.
 
@@ -17,13 +17,16 @@ One local tool for ChatGPT, Claude, Gemini and Grok: read the open conversation,
 2. **Load unpacked** → select the `extension-v3` folder.
 3. Click the toolbar icon: the side panel opens next to the chat.
 
-Version 3.0 is a separate extension and does not touch 2.x data. Both can be installed side by side while testing.
+Installed from the Chrome Web Store as an update of GPT Project & Memory Tools 2.x, version 3.0 moves the 2.x saved chats, prompts and the project-memory switch into its own storage (`src/core/migrate-v2.js`). An unpacked install has a different extension id and starts empty.
 
 ## What it does
 
 - **Conversation tab**: reads the open chat (API first; the page is used only when the API fails, with a visible warning), lists the messages with role filter and selection, exports Markdown / HTML / JSON, copies, saves to the library.
 - **Continue in…**: builds a transcript prompt from the selected messages (oldest messages are dropped first above 24 000 characters), opens a new chat in the chosen assistant and puts the text into its input. It is never sent automatically; the text is also copied to the clipboard as a fallback.
-- **Library tab**: saved chats from every assistant in one IndexedDB store, full-text search, platform filter, open/delete, JSON backup and restore. Search results can be inserted as a context block in front of the current message in any supported chat.
+- **Conversation tab** also has search inside the chat, **Show in chat** (scrolls to the message and highlights it) and **PDF** (print page → Save as PDF).
+- **Prompts tab**: local prompt library — search, add/edit/delete, copy, insert into the current chat or a new chat in any assistant, import/export JSON (2.x exports are accepted).
+- **Site tab and right-click menu**: selected text, readable page text, a screenshot of the visible area or YouTube subtitles (from YouTube's transcript panel) into a new chat in the chosen assistant. Nothing is sent automatically.
+- **Library tab**: folders, tags and notes per chat, folder filter, bulk ZIP export of selected chats (Markdown + `library.json`); saved chats from every assistant in one IndexedDB store, full-text search, platform filter, open/delete, JSON backup and restore. Search results can be inserted as a context block in front of the current message in any supported chat.
 
 ## Full ZIP with files
 
@@ -63,14 +66,14 @@ window.postMessage({ source: 'acm-test', id: 1, command: 'read' }, location.orig
 window.addEventListener('message', (e) => e.data?.source === 'acm-test-result' && console.log(e.data));
 ```
 
-Commands: `ping`, `permissions`, `read`, `exports`, `zip`, `handoff`, `composer`, `library`, `project-sync`, `memory-context`. They return structural reports only (counts, roles, sizes, error reasons), never conversation text; `zip` builds the archive in memory without saving it, `library` removes the test record again.
+Commands: `ping`, `permissions`, `read`, `exports`, `zip`, `handoff`, `composer`, `composer-append`, `locate`, `library`, `prompts`, `migration`, `print`, `project-sync`, `memory-context`, `reload`. They return structural reports only (counts, roles, sizes, error reasons), never conversation text; `zip` builds the archive in memory without saving it, `library` removes the test record again.
 
 ## Layout
 
 ```
 manifest.json            MV3, optional host access per platform
 sidepanel.html           UI shell
-src/background.js        opens the side panel from the toolbar icon
+src/background.js        side panel, right-click menu, 2.x migration, memory and test messages
 src/platforms/*.js       one adapter per platform: URL matching, fetchRaw (runs in the page), normalize (pure)
 src/core/model.js        unified Conversation / Message model
 src/core/reader.js       API-first read with page fallback and a 90 s cache
@@ -79,7 +82,11 @@ src/core/handoff.js      continue-in prompt and library context block
 src/core/search.js       chunking and scoring (pure)
 src/core/library.js      IndexedDB storage, backup/restore
 src/page/page-kit.js     injected helper: DOM → markdown, scroll sweep, composer insertion
-src/ui/                  side panel logic, styles, uk/en strings
+src/core/prompts.js      prompt library
+src/core/site-*.js       web page readers and page → chat jobs
+src/core/deliver.js      put text or an image into a (new) chat
+src/core/migrate-v2.js   2.x data migration
+src/ui/                  side panel, print page, uk/en strings
 ```
 
 Adding a platform means adding one adapter file with `matches`, `conversationIdFromUrl`, `fetchRaw`, `normalize`, `dom` and `composerSelectors`, plus a fixture test in `tests/v3/platforms.test.mjs`.
@@ -90,6 +97,8 @@ Adding a platform means adding one adapter file with `matches`, `conversationIdF
 node --test tests/v3/*.test.mjs
 ```
 
-## Not in this preview yet
+## Known limits
 
-- Grok long-thread and branch verification (only a short chat was available).
+- Grok long-thread and branch verification (only short chats were available).
+- Claude project memory is not enabled.
+- YouTube subtitles come from YouTube's transcript panel; caption files are empty without the player's token (October 2026).
