@@ -44,7 +44,7 @@ Format **ZIP with files** downloads every file the selected messages reference a
 | Grok | uploads and generated images on `assets.grok.com` | 221 626 B ZIP upload |
 | Gemini | uploaded and generated images, original size (`=s0`), fetched by the extension because googleusercontent.com sends no CORS headers to the chat page | upload entry structure and original 1280×934 / 172 912 B on a real chat |
 
-Identical files are stored once (SHA-256). Limits: 200 MB per file, 700 MB per archive.
+Identical files are stored once (SHA-256). Limit: 200 MB per file. Exports larger than ~300 MB are split into `….part1.zip`, `….part2.zip`, …; each part is saved as soon as it is full, and the last part carries the transcript, manifest and `README-PARTS.txt`. Extract all parts into one folder.
 
 ## Test mode (automated testing)
 

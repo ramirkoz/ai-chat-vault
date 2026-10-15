@@ -8,6 +8,7 @@ const uk = {
   needAccessAll: 'Щоб розпізнати чат, дозвольте розширенню доступ до сайтів ChatGPT, Claude, Gemini і Grok. Інші сайти воно не бачить.',
   grantAccess: 'Надати доступ',
   reading: 'Читаю розмову…',
+  readingSlow: '{platform} відповідає повільно (великий чат), чекаємо…',
   readApi: '{count} повідомлень · прочитано через API {platform}',
   readDom: '{count} повідомлень · API недоступне ({reason}), прочитано зі сторінки — може бути неповно',
   readFailed: 'Не вдалося прочитати розмову: {reason}',
@@ -22,6 +23,8 @@ const uk = {
   formatZip: 'ZIP з файлами',
   zipProgress: 'Файли {done}/{total}: {name}',
   zipDone: 'Архів збережено: файлів {included}, не вдалося завантажити {missing} (див. MISSING_FILES.txt).',
+  zipProgressPart: 'Частина {part} · файли {done}/{total}: {name}',
+  zipDoneParts: 'Збережено {parts} архіви-частини: файлів {included}, не вдалося {missing}. Розпакуйте всі частини в одну папку.',
   copy: 'Копіювати',
   copied: 'Скопійовано в буфер обміну.',
   save: 'Зберегти в бібліотеку',
@@ -61,6 +64,7 @@ const en = {
   needAccessAll: 'To recognise the chat, allow access to the ChatGPT, Claude, Gemini and Grok sites. No other sites are visible to the extension.',
   grantAccess: 'Grant access',
   reading: 'Reading the conversation…',
+  readingSlow: '{platform} is answering slowly (large chat), still waiting…',
   readApi: '{count} messages · read through the {platform} API',
   readDom: '{count} messages · API unavailable ({reason}), read from the page — may be incomplete',
   readFailed: 'Could not read the conversation: {reason}',
@@ -75,6 +79,8 @@ const en = {
   formatZip: 'ZIP with files',
   zipProgress: 'Files {done}/{total}: {name}',
   zipDone: 'Archive saved: {included} files, {missing} could not be downloaded (see MISSING_FILES.txt).',
+  zipProgressPart: 'Part {part} · files {done}/{total}: {name}',
+  zipDoneParts: 'Saved {parts} archive parts: {included} files, {missing} failed. Extract all parts into one folder.',
   copy: 'Copy',
   copied: 'Copied to the clipboard.',
   save: 'Save to library',
@@ -104,7 +110,8 @@ const en = {
   you: 'Me'
 };
 
-const table = /^uk|^ru/i.test(navigator.language || '') ? uk : en;
+// Ukrainian for a Ukrainian browser, English for every other language.
+const table = /^uk/i.test(navigator.language || '') ? uk : en;
 
 export function t(key, values = {}) {
   return String(table[key] ?? en[key] ?? key).replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ''));

@@ -117,8 +117,11 @@ async function loadConversation({ refresh = false } = {}) {
 
   setStatus(nodes.status, t('reading'));
   setBusy(true);
+  // Large ChatGPT chats can take 10–30 s on ChatGPT's side.
+  const slowNotice = setTimeout(() => setStatus(nodes.status, t('readingSlow', { platform: platform.label })), 6000);
   try {
     conversation = await readConversation(activeTab, { refresh });
+    clearTimeout(slowNotice);
     showHeader(platform);
     renderMessages();
     nodes.conversation.hidden = false;
@@ -131,6 +134,7 @@ async function loadConversation({ refresh = false } = {}) {
   } catch (error) {
     setStatus(nodes.status, t('readFailed', { reason: String(error?.message || error) }), 'error');
   } finally {
+    clearTimeout(slowNotice);
     setBusy(false);
   }
 }
@@ -211,17 +215,22 @@ async function exportFullZip(indices) {
   try {
     const result = await buildFullPackage(conversation, indices, {
       download: tabDownloader(tabId),
-      onProgress: ({ done, total, name }) => {
-        if (total) setStatus(nodes.status, t('zipProgress', { done, total, name }));
+      onProgress: ({ done, total, name, part }) => {
+        if (total) setStatus(nodes.status, t(part > 1 ? 'zipProgressPart' : 'zipProgress', { done, total, name, part }));
+      },
+      // Each finished part is saved immediately so its bytes can be released.
+      onPart: async ({ filename, parts }) => {
+        const url = URL.createObjectURL(new Blob(parts, { type: 'application/zip' }));
+        try {
+          await chrome.downloads.download({ url, filename, saveAs: false, conflictAction: 'uniquify' });
+        } finally {
+          setTimeout(() => URL.revokeObjectURL(url), 120000);
+        }
       }
     });
-    const url = URL.createObjectURL(new Blob(result.parts, { type: 'application/zip' }));
-    try {
-      await chrome.downloads.download({ url, filename: result.filename, saveAs: false, conflictAction: 'uniquify' });
-    } finally {
-      setTimeout(() => URL.revokeObjectURL(url), 120000);
-    }
-    const summary = t('zipDone', { included: result.included, missing: result.missing.length });
+    const summary = result.archives.length > 1
+      ? t('zipDoneParts', { included: result.included, missing: result.missing.length, parts: result.archives.length })
+      : t('zipDone', { included: result.included, missing: result.missing.length });
     setStatus(nodes.status, summary, result.missing.length ? 'warn' : 'ok');
   } finally {
     setBusy(false);

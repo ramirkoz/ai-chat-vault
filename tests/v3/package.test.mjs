@@ -168,13 +168,16 @@ test('full package: dedupe, fallback text, honest missing list, links', async (t
     return { ok: false, error: 'HTTP 500' };
   };
   const progress = [];
-  const result = await buildFullPackage(conversation, null, { download, onProgress: (p) => progress.push(p.done), exportedAt: '2026-10-13T00:00:00Z' });
+  const saved = [];
+  const result = await buildFullPackage(conversation, null, { download, onProgress: (p) => progress.push(p.done), onPart: (part) => saved.push(part), exportedAt: '2026-10-13T00:00:00Z' });
+  assert.equal(saved.length, 1, 'a small export is a single archive');
+  assert.match(saved[0].filename, /_Pack\.zip$/);
   assert.equal(result.included, 3, 'a.png, notes.txt and plan.md (from fallback text)');
   assert.equal(result.duplicates, 1);
   assert.deepEqual(result.missing, [{ messageIndex: 1, name: 'gone.bin', reason: 'HTTP 404' }]);
   assert.deepEqual(progress, [0, 1, 2, 3, 4, 5]);
 
-  const bytes = new Uint8Array(Buffer.concat(result.parts.map((part) => Buffer.from(part))));
+  const bytes = new Uint8Array(Buffer.concat(saved[0].parts.map((part) => Buffer.from(part))));
   const listed = listWithPython(bytes);
   if (!listed) return t.skip('python not available');
   const base = result.filename.replace(/\.zip$/, '');
@@ -190,4 +193,39 @@ test('full package: dedupe, fallback text, honest missing list, links', async (t
   assert.equal(manifest.files.length, 4);
   assert.ok(!JSON.stringify(manifest).includes('"bytes"'));
   assert.doesNotMatch(listed[`${base}/conversation.json`], /https:\/\/x\//, 'download routes are not exported');
+});
+
+test('large export is split into parts; documents and links live in the last part', async (t) => {
+  const file = (n) => ({ name: `f${n}.bin`, mime: '', size: 0, source: { type: 'url', url: `https://x/${n}` } });
+  const conversation = finalizeConversation({
+    platform: 'chatgpt', id: 'c', title: 'Big', url: 'https://chatgpt.com/c/c',
+    messages: [
+      { role: 'user', markdown: 'files', assets: [file(1), file(2), file(3)] },
+      { role: 'assistant', markdown: 'more', assets: [file(4), file(5)] }
+    ]
+  });
+  // 5 distinct 400-byte files with a 1000-byte part limit: parts of 2 + 2 + 1 files.
+  const download = async (source) => {
+    const n = Number(source.url.split('/').pop());
+    const bytes = new Uint8Array(400).fill(n);
+    return { ok: true, bytes, crc: crc32(bytes), mime: 'application/octet-stream' };
+  };
+  const saved = [];
+  const result = await buildFullPackage(conversation, null, { download, partBytes: 1000, onPart: (part) => saved.push(part), exportedAt: '2026-10-15T00:00:00Z' });
+  assert.equal(result.archives.length, 3);
+  assert.deepEqual(saved.map((part) => part.filename.match(/\.part(\d)\.zip$/)?.[1]), ['1', '2', '3']);
+  assert.equal(result.included, 5);
+
+  const listings = saved.map((part) => listWithPython(new Uint8Array(Buffer.concat(part.parts.map((chunk) => Buffer.from(chunk))))));
+  if (!listings[0]) return t.skip('python not available');
+  const base = saved[0].filename.replace(/\.part1\.zip$/, '');
+  const filesIn = (listing) => Object.keys(listing).filter((name) => name.startsWith(`${base}/files/`)).length;
+  assert.deepEqual(listings.map(filesIn), [2, 2, 1]);
+  assert.ok(!(`${base}/conversation.md` in listings[0]), 'documents are not in the first part');
+  const last = listings[2];
+  assert.match(last[`${base}/conversation.md`], /📎 \[f1\.bin\]\(files\/f1\.bin\)/);
+  assert.match(last[`${base}/README-PARTS.txt`], /3 archives/);
+  const manifest = JSON.parse(last[`${base}/manifest.json`]);
+  assert.equal(manifest.archiveParts, 3);
+  assert.deepEqual(manifest.files.map((entry) => entry.part), [1, 1, 2, 2, 3]);
 });

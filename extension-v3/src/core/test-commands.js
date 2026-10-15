@@ -63,15 +63,17 @@ const commands = {
   },
 
   // limit: only the first N files (quick runs on chats with many files).
-  async zip(tab, { indices = null, limit = 0 } = {}) {
+  // partBytes: force small parts to test splitting on a real chat.
+  async zip(tab, { indices = null, limit = 0, partBytes = 0 } = {}) {
     const conversation = await readConversation(tab);
     const started = Date.now();
     let planned = 0;
     const download = tabDownloader(tab.id);
     const result = await buildFullPackage(conversation, indices, {
-      download: (source) => (limit && (planned += 1) > limit ? Promise.resolve({ ok: false, error: 'skipped by test limit' }) : download(source))
+      download: (source) => (limit && (planned += 1) > limit ? Promise.resolve({ ok: false, error: 'skipped by test limit' }) : download(source)),
+      ...(partBytes ? { partBytes } : {})
     });
-    const zipBytes = result.parts.reduce((sum, part) => sum + part.length, 0);
+    const zipBytes = result.archives.reduce((sum, archive) => sum + archive.bytes, 0);
     return {
       ms: Date.now() - started,
       zipBytes,
@@ -79,6 +81,7 @@ const commands = {
       included: result.included,
       duplicates: result.duplicates,
       missing: result.missing.map((item) => ({ message: item.messageIndex + 1, extension: extensionOf(item.name), reason: item.reason })),
+      archives: result.archives.map((archive) => ({ bytes: archive.bytes, entries: archive.files, multipart: /\.part\d+\.zip$/.test(archive.filename) })),
       filenameLength: result.filename.length
     };
   },

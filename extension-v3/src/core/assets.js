@@ -2,7 +2,8 @@ import { createZipParts, crc32Update } from './zip.js';
 import { toMarkdown, toHtml, toJson, selectMessages, exportFilename } from './export.js';
 
 export const MAX_FILE_BYTES = 200 * 1024 * 1024;
-export const MAX_TOTAL_BYTES = 700 * 1024 * 1024;
+// Large exports are split into archives of about this size (see buildFullPackage).
+export const PART_BYTES = 300 * 1024 * 1024;
 const CHUNK_BYTES = 4 * 1024 * 1024;
 
 // Downloads happen in the chat page (MAIN world) so the platform's own session
@@ -249,19 +250,43 @@ async function sha256(bytes) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-// Builds the full archive. `download(source)` resolves one remote file (in the page);
-// it is injected so the packaging logic can be tested without a browser tab.
-export async function buildFullPackage(conversation, indices, { download, onProgress = () => {}, exportedAt = new Date().toISOString() } = {}) {
+// Builds the full archive, split into parts so large exports never sit in memory at
+// once. Files fill a part up to `partBytes`; each finished part is handed to
+// onPart({ filename, parts, bytes }) right away and its bytes are released. The
+// transcript (with links into files/), manifest.json and MISSING_FILES.txt go into
+// the last part. Every part uses the same top folder, so extracting all parts into
+// one place restores the links.
+// `download(source)` resolves one remote file; it is injected so the packaging can
+// be tested without a browser.
+export async function buildFullPackage(conversation, indices, {
+  download,
+  onProgress = () => {},
+  onPart = () => {},
+  partBytes = PART_BYTES,
+  exportedAt = new Date().toISOString()
+} = {}) {
   const plan = planAssets(conversation, indices);
   const files = [];
   const missing = [];
   const byHash = new Map();
   const usedNames = new Set();
-  let total = 0;
+  const base = exportFilename(conversation, 'zip').replace(/\.zip$/, '');
+  const archives = [];
+  let pending = [];
+  let pendingBytes = 0;
+
+  const emit = async (entries, last) => {
+    const number = archives.length + 1;
+    const filename = last && number === 1 ? `${base}.zip` : `${base}.part${number}.zip`;
+    const parts = createZipParts(entries);
+    const bytes = parts.reduce((sum, part) => sum + part.length, 0);
+    archives.push({ filename, bytes, files: entries.length });
+    await onPart({ filename, parts, bytes, last });
+  };
 
   for (let i = 0; i < plan.length; i += 1) {
     const asset = plan[i];
-    onProgress({ done: i, total: plan.length, name: asset.name });
+    onProgress({ done: i, total: plan.length, name: asset.name, part: archives.length + 1 });
     // Let the service worker answer other messages between files.
     await new Promise((resolve) => setTimeout(resolve, 0));
     let bytes = null;
@@ -284,7 +309,6 @@ export async function buildFullPackage(conversation, indices, { download, onProg
         }
       }
     }
-    if (bytes && total + bytes.length > MAX_TOTAL_BYTES) { reason = 'archive size limit reached'; bytes = null; }
     if (!bytes) {
       missing.push({ messageIndex: asset.messageIndex, name: asset.name, reason });
       continue;
@@ -294,7 +318,7 @@ export async function buildFullPackage(conversation, indices, { download, onProg
     const existing = byHash.get(hash);
     if (existing) {
       // Same bytes attached twice: keep one copy, link both messages to it.
-      files.push({ messageIndex: asset.messageIndex, name: asset.name, path: existing.path, size: bytes.length, sha256: hash, note: asset.note || '', duplicate: true });
+      files.push({ messageIndex: asset.messageIndex, name: asset.name, path: existing.path, size: bytes.length, sha256: hash, note: asset.note || '', duplicate: true, part: existing.part });
       continue;
     }
     let fileName = safeFileName(asset.name, mime);
@@ -304,18 +328,26 @@ export async function buildFullPackage(conversation, indices, { download, onProg
       candidate = `files/${dot > 0 ? `${fileName.slice(0, dot)} (${n})${fileName.slice(dot)}` : `${fileName} (${n})`}`;
     }
     usedNames.add(candidate.toLowerCase());
-    total += bytes.length;
-    const entry = { messageIndex: asset.messageIndex, name: asset.name, path: candidate, size: bytes.length, sha256: hash, mime, note: asset.note || '', bytes, crc };
+
+    // Close the current part before it would grow past the limit.
+    if (pending.length && pendingBytes + bytes.length > partBytes) {
+      await emit(pending, false);
+      pending = [];
+      pendingBytes = 0;
+    }
+    const entry = { messageIndex: asset.messageIndex, name: asset.name, path: candidate, size: bytes.length, sha256: hash, mime, note: asset.note || '', part: archives.length + 1 };
     byHash.set(hash, entry);
     files.push(entry);
+    pending.push({ name: `${base}/${candidate}`, data: bytes, crc });
+    pendingBytes += bytes.length;
   }
-  onProgress({ done: plan.length, total: plan.length, name: '' });
+  onProgress({ done: plan.length, total: plan.length, name: '', part: archives.length + 1 });
 
   const links = {};
   for (const file of files) (links[file.messageIndex] ||= []).push({ name: file.name, path: file.path });
   for (const item of missing) (links[item.messageIndex] ||= []).push({ name: item.name, missing: true });
 
-  const base = exportFilename(conversation, 'zip').replace(/\.zip$/, '');
+  const lastPart = archives.length + 1;
   const manifest = {
     format: 'ai-chat-memory-tools/package@1',
     exportedAt,
@@ -324,18 +356,18 @@ export async function buildFullPackage(conversation, indices, { download, onProg
     source: conversation.url,
     reader: conversation.source,
     messages: selectMessages(conversation, indices).length,
-    files: files.map(({ bytes, crc, ...file }) => file),
+    archiveParts: lastPart,
+    files,
     missing
   };
-  const entries = [
+  const documents = [
     { name: `${base}/conversation.md`, data: toMarkdown(conversation, indices, exportedAt, { links }) },
     { name: `${base}/conversation.html`, data: toHtml(conversation, indices, exportedAt, { links }) },
     { name: `${base}/conversation.json`, data: toJson(conversation, indices, exportedAt) },
-    { name: `${base}/manifest.json`, data: JSON.stringify(manifest, null, 2) },
-    ...files.filter((file) => file.bytes).map((file) => ({ name: `${base}/${file.path}`, data: file.bytes, crc: file.crc }))
+    { name: `${base}/manifest.json`, data: JSON.stringify(manifest, null, 2) }
   ];
   if (missing.length) {
-    entries.push({
+    documents.push({
       name: `${base}/MISSING_FILES.txt`,
       data: [
         'Files that are referenced in the conversation but could not be downloaded.',
@@ -345,9 +377,17 @@ export async function buildFullPackage(conversation, indices, { download, onProg
       ].join('\n')
     });
   }
+  if (lastPart > 1) {
+    documents.push({
+      name: `${base}/README-PARTS.txt`,
+      data: `This export is split into ${lastPart} archives (${base}.part1.zip … part${lastPart}.zip).\nExtract all of them into the same folder; the links in conversation.md and conversation.html then point to the files.\n`
+    });
+  }
+  await emit([...documents, ...pending], true);
+
   return {
-    filename: `${base}.zip`,
-    parts: createZipParts(entries),
+    archives,
+    filename: archives[archives.length - 1].filename,
     included: files.filter((file) => !file.duplicate).length,
     duplicates: files.filter((file) => file.duplicate).length,
     missing
