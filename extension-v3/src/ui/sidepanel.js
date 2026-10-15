@@ -7,6 +7,8 @@ import { searchRecords } from '../core/search.js';
 import { PLATFORM_LABELS } from '../core/model.js';
 import { buildFullPackage, tabDownloader } from '../core/assets.js';
 import { enableTestMode, disableTestMode, isTestModeOn, testModeUntil } from '../core/test-mode.js';
+import { memoryPlatforms, isAutoMemoryOn, setAutoMemory, runProjectSync, projectState } from '../core/memory-service.js';
+import { projectKey } from '../core/project-memory.js';
 import { t } from './strings.js';
 
 const $ = (id) => document.getElementById(id);
@@ -418,6 +420,63 @@ async function restore(file) {
   await renderLibrary();
 }
 
+// ---------- automatic project memory ----------
+
+const memoryBox = document.getElementById('auto-memory');
+const memoryRow = document.getElementById('project-memory');
+const memoryStatus = document.getElementById('project-memory-status');
+const memorySyncButton = document.getElementById('project-sync');
+document.getElementById('auto-memory-label').textContent = t('autoMemory');
+document.getElementById('auto-memory-help').textContent = t('autoMemoryHelp');
+memorySyncButton.textContent = t('projectSync');
+
+async function renderMemory() {
+  memoryBox.checked = await isAutoMemoryOn();
+  const tab = await currentTab();
+  const platform = memoryPlatforms.find((candidate) => candidate.matches(tab?.url));
+  const projectId = platform?.projectIdFromUrl(tab.url);
+  memoryRow.hidden = !projectId;
+  if (!projectId) return;
+  const key = projectKey(platform.id, projectId);
+  const chats = (await listRecords()).filter((record) => record.project === key).length;
+  const state = await projectState(platform.id, projectId);
+  memoryStatus.textContent = state?.running
+    ? t('projectSyncing', { done: state.progress?.done ?? 0, total: state.progress?.total ?? '…' })
+    : t('projectMemoryState', { chats, when: state?.finishedAt ? new Date(state.finishedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—' });
+}
+
+memoryBox.addEventListener('change', async () => {
+  try {
+    if (memoryBox.checked) {
+      const origins = memoryPlatforms.flatMap((platform) => platform.origins);
+      if (!(await chrome.permissions.request({ origins }))) { memoryBox.checked = false; return; }
+    }
+    await setAutoMemory(memoryBox.checked);
+  } catch (error) {
+    setStatus(nodes.libraryStatus, String(error?.message || error), 'error');
+  }
+  await renderMemory();
+});
+
+memorySyncButton.addEventListener('click', async () => {
+  const tab = await currentTab();
+  memorySyncButton.disabled = true;
+  try {
+    const result = await runProjectSync(tab, {
+      force: true,
+      onProgress: ({ done, total }) => { memoryStatus.textContent = t('projectSyncing', { done, total }); }
+    });
+    setStatus(nodes.libraryStatus, result.ok
+      ? t('projectSynced', { updated: result.updated, unchanged: result.unchanged, failed: result.failed })
+      : String(result.error), result.ok && !result.failed ? 'ok' : 'warn');
+  } finally {
+    memorySyncButton.disabled = false;
+    await renderMemory();
+    await renderLibrary();
+  }
+});
+renderMemory().catch(() => {});
+
 // ---------- test mode ----------
 
 const testModeBox = document.getElementById('test-mode');
@@ -493,6 +552,7 @@ async function followActiveTab() {
   if (tab?.url === lastUrl) return;
   lastUrl = tab?.url || '';
   await loadConversation();
+  await renderMemory().catch(() => {});
 }
 chrome.tabs.onActivated.addListener(() => followActiveTab().catch(() => {}));
 chrome.permissions.onAdded.addListener(() => loadConversation().catch(() => {}));

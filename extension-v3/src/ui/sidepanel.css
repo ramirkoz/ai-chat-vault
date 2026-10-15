@@ -79,3 +79,4 @@ select, input[type="text"], input[type="search"] {
 .library .row { margin-top: 4px; }
 .footer { justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 8px; }
 .test-mode { gap: 8px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 8px; }
+.memory { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--border); padding-top: 8px; }

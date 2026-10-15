@@ -46,6 +46,14 @@ Format **ZIP with files** downloads every file the selected messages reference a
 
 Identical files are stored once (SHA-256). Limit: 200 MB per file. Exports larger than ~300 MB are split into `….part1.zip`, `….part2.zip`, …; each part is saved as soon as it is full, and the last part carries the transcript, manifest and `README-PARTS.txt`. Extract all parts into one folder.
 
+## Automatic project memory (ChatGPT)
+
+Library tab → **Automatic project memory**. Ported from 2.x:
+
+- Opening a chat in a ChatGPT Project syncs the project's chats into the local library (only new or changed chats are fetched; at most every 10 minutes per project, or on demand with **Sync this project now**).
+- When you send the first message of a **new** chat in that project, the most relevant excerpts from the project's other chats are put in front of it as a `[PROJECT MEMORY: …]` block, followed by `[CURRENT REQUEST]` and your text. Nothing is added to ChatGPT's Project Sources.
+- Claude Projects are prepared in the architecture but not enabled: no Claude project was available to verify against.
+
 ## Test mode (automated testing)
 
 Library tab → **Test mode**. While on (60 minutes at most), a bridge on the four chat sites accepts commands from the page and runs them in the extension:
@@ -55,7 +63,7 @@ window.postMessage({ source: 'acm-test', id: 1, command: 'read' }, location.orig
 window.addEventListener('message', (e) => e.data?.source === 'acm-test-result' && console.log(e.data));
 ```
 
-Commands: `ping`, `read`, `exports`, `zip`, `handoff`, `composer`, `library`. They return structural reports only (counts, roles, sizes, error reasons), never conversation text; `zip` builds the archive in memory without saving it, `library` removes the test record again.
+Commands: `ping`, `permissions`, `read`, `exports`, `zip`, `handoff`, `composer`, `library`, `project-sync`, `memory-context`. They return structural reports only (counts, roles, sizes, error reasons), never conversation text; `zip` builds the archive in memory without saving it, `library` removes the test record again.
 
 ## Layout
 
@@ -84,5 +92,4 @@ node --test tests/v3/*.test.mjs
 
 ## Not in this preview yet
 
-- Automatic project memory (2.x auto-sync and first-message injection).
 - Grok long-thread and branch verification (only a short chat was available).

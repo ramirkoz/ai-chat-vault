@@ -6,6 +6,7 @@ import { searchRecords, tokenize } from './search.js';
 import { toMarkdown, toHtml, toJson } from './export.js';
 import { platforms, platformFor, platformById } from '../platforms/index.js';
 import { isTestModeOn, testModeUntil } from './test-mode.js';
+import { runProjectSync, contextForDraft } from './memory-service.js';
 
 // Structural summary only: no message text leaves the extension in test mode.
 function summarize(conversation) {
@@ -107,6 +108,19 @@ const commands = {
       }
     });
     return run?.result;
+  },
+
+  // Project memory: sync the project of this tab (force skips the 10-minute throttle).
+  async 'project-sync'(tab, { force = true } = {}) {
+    const stats = await runProjectSync(tab, { force });
+    const { errors, projectName, ...rest } = stats;
+    return { ...rest, projectNameLength: String(projectName || '').length, errorSamples: errors || [] };
+  },
+
+  // Project memory: what would be put in front of a first message with this text.
+  async 'memory-context'(tab, { query = '' } = {}) {
+    const { block, hits, projectChats } = await contextForDraft(tab, query);
+    return { hits, projectChats, blockLength: block.length, hasHeader: /^\[PROJECT MEMORY:/.test(block) };
   },
 
   // Saves the open chat, searches for it by its own words, and removes it again

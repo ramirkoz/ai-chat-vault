@@ -13,6 +13,45 @@ export function conversationIdFromUrl(url) {
   return String(url || '').match(/\/c\/([a-z0-9-]{8,})/i)?.[1] || '';
 }
 
+// ChatGPT Projects: /g/g-p-<id>-<slug>/project (new chat) and /g/g-p-<id>-<slug>/c/<conversation>.
+export function projectIdFromUrl(url) {
+  return String(url || '').match(/\/g\/(g-p-[a-z0-9]+)/i)?.[1] || '';
+}
+
+export function conversationUrl(conversationId, projectId = '') {
+  return projectId ? `https://chatgpt.com/g/${projectId}/c/${conversationId}` : `https://chatgpt.com/c/${conversationId}`;
+}
+
+// Runs in the page (self-contained): every conversation of a project, newest first
+// (verified 2026-10-13: 10 items per page, string cursor, name at gizmo.display.name).
+export async function listProjectInPage(projectId) {
+  const headers = { accept: 'application/json' };
+  const session = await (await fetch('/api/auth/session', { credentials: 'include' })).json().catch(() => ({}));
+  if (session?.accessToken) headers.authorization = `Bearer ${session.accessToken}`;
+  if (session?.account?.id) headers['chatgpt-account-id'] = session.account.id;
+  const items = [];
+  const seen = new Set();
+  let cursor = '0';
+  for (let page = 0; cursor !== null && page < 60 && items.length < 1500; page += 1) {
+    const response = await fetch(`/backend-api/gizmos/${encodeURIComponent(projectId)}/conversations?cursor=${encodeURIComponent(cursor)}`, { credentials: 'include', headers });
+    if (!response.ok) return { ok: false, status: response.status, items };
+    const data = await response.json();
+    for (const item of Array.isArray(data?.items) ? data.items : []) {
+      if (!item?.id || seen.has(item.id)) continue;
+      seen.add(item.id);
+      items.push({ id: item.id, title: item.title || '', updateTime: item.update_time || item.create_time || 0 });
+    }
+    const next = data?.cursor;
+    cursor = next === null || next === undefined || next === '' || String(next) === cursor ? null : String(next);
+  }
+  let name = '';
+  try {
+    const gizmo = await (await fetch(`/backend-api/gizmos/${encodeURIComponent(projectId)}`, { credentials: 'include', headers })).json();
+    name = String(gizmo?.gizmo?.display?.name || '');
+  } catch (_) {}
+  return { ok: true, name, items };
+}
+
 export const composerSelectors = [
   '[contenteditable="true"][data-composer-markdown]',
   '#prompt-textarea',

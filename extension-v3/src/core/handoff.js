@@ -42,7 +42,7 @@ export function buildHandoffPrompt(conversation, { targetLabel = '', limit = DEF
 }
 
 // Builds a context block from library hits to put in front of a new message.
-export function buildMemoryBlock(hits, { limit = 8000 } = {}) {
+export function buildMemoryBlock(hits, { limit = 8000, title = 'CONTEXT FROM MY SAVED CHATS — retrieved locally, may be outdated', note = '' } = {}) {
   const sections = [];
   let used = 0;
   for (const hit of hits) {
@@ -54,7 +54,7 @@ export function buildMemoryBlock(hits, { limit = 8000 } = {}) {
   }
   if (!sections.length) return '';
   return [
-    '[CONTEXT FROM MY SAVED CHATS — retrieved locally, may be outdated]',
+    [`[${title}]`, note].filter(Boolean).join('\n'),
     ...sections,
     '[/CONTEXT]'
   ].join('\n\n---\n\n');
