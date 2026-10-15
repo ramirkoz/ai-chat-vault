@@ -235,8 +235,10 @@
     // Large text is inserted in pieces: ProseMirror editors (ChatGPT, Claude) show
     // one big insertText but do not take it into their state (verified live).
     try {
-      // In rich editors one newline already starts a new paragraph.
-      const value = mode === 'append' && hasText ? `\n${text}` : text + (mode === 'prepend' ? '\n\n' : '');
+      // In rich editors (ProseMirror, Quill) every newline starts a paragraph, so a
+      // blank line would become an empty paragraph: collapse them.
+      const rich = String(text).replace(/\n{2,}/g, '\n');
+      const value = mode === 'append' && hasText ? `\n${rich}` : rich + (mode === 'prepend' ? '\n' : '');
       inserted = true;
       for (let i = 0; i < value.length; i += 400) inserted = document.execCommand('insertText', false, value.slice(i, i + 400)) && inserted;
     } catch (_) { inserted = false; }

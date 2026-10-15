@@ -724,9 +724,13 @@ async function renderPendingJob({ reveal = false } = {}) {
   }
   if (!pendingJob) return;
   setStatus(nodes.siteStatus, '');
-  nodes.sitePendingLabel.textContent = t('sitePending', { title: pendingJob.title || pendingJob.url });
-  nodes.sitePendingPreview.hidden = !pendingJob.text;
-  nodes.sitePendingPreview.textContent = String(pendingJob.text || '').slice(0, 1500);
+  const text = String(pendingJob.text || '');
+  nodes.sitePendingLabel.textContent = text
+    ? t('sitePendingText', { title: pendingJob.title || pendingJob.url, chars: text.length.toLocaleString() })
+    : t('sitePending', { title: pendingJob.title || pendingJob.url });
+  // The whole text, scrollable: a shortened preview looked like a cut transfer.
+  nodes.sitePendingPreview.hidden = !text;
+  nodes.sitePendingPreview.textContent = text;
   nodes.sitePendingImage.hidden = !pendingJob.image;
   if (pendingJob.image) nodes.sitePendingImage.src = pendingJob.image;
   nodes.siteSend.textContent = t('siteSend', { target: platformById(nodes.siteTarget.value)?.label || '' });
