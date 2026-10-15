@@ -51,9 +51,13 @@
     range.selectNodeContents(editor);
     selection.removeAllRanges();
     selection.addRange(range);
-    // Setting textContent on a ProseMirror editor is undone by the editor, so a
-    // failed insertText is reported instead of faked.
-    return document.execCommand('insertText', false, value) ? 'insertText' : 'failed';
+    // ChatGPT's ProseMirror editor shows one large insertText but does not take
+    // it into its state, so the old draft gets sent (live test: 7 KB at once →
+    // only the 6-character draft was sent). Inserted in 400-character pieces it
+    // is taken in full (7 079 characters sent).
+    let ok = true;
+    for (let i = 0; i < value.length; i += 400) ok = document.execCommand('insertText', false, value.slice(i, i + 400)) && ok;
+    return ok ? 'insertText-chunks' : 'failed';
   }
 
   function notice(text) {
@@ -65,17 +69,22 @@
     setTimeout(() => box.remove(), 9000);
   }
 
-  async function send(button) {
-    // Wait (up to 3 s) until the send button is enabled for the new text.
-    let target = null;
-    for (let i = 0; i < 30 && !target; i += 1) {
-      target = (button && !button.disabled && isShown(button)) ? button : findSendButton();
-      if (!target) await wait(100);
-    }
+  // Enter goes through the editor itself, which submits its own state; the send
+  // button is only a fallback if the input still holds the text afterwards.
+  async function send(button, messagesBefore) {
     bypass = true;
-    trace({ sendWith: target ? 'button' : 'enter' });
-    if (target) target.click();
-    else composer()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
+    const editor = composer();
+    editor?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+    let sendWith = 'enter';
+    for (let i = 0; i < 15; i += 1) {
+      await wait(100);
+      if (userMessages() > messagesBefore || !draftOf(composer())) break;
+    }
+    if (draftOf(composer()) && userMessages() <= messagesBefore) {
+      const target = (button && !button.disabled && isShown(button)) ? button : findSendButton();
+      if (target) { target.click(); sendWith = 'enter+button'; }
+    }
+    trace({ sendWith });
     setTimeout(() => { bypass = false; }, 300);
   }
 
@@ -121,7 +130,7 @@
       // Memory is best effort: the message is sent unchanged.
     } finally {
       busy = false;
-      await send(button);
+      await send(button, messagesBefore);
       void guardAgainstLoss(draft, messagesBefore, pathBefore);
     }
   }

@@ -223,7 +223,13 @@
     selection.removeAllRanges();
     selection.addRange(range);
     let inserted = false;
-    try { inserted = document.execCommand('insertText', false, text + (mode === 'prepend' ? '\n\n' : '')); } catch (_) {}
+    // Large text is inserted in pieces: ProseMirror editors (ChatGPT, Claude) show
+    // one big insertText but do not take it into their state (verified live).
+    try {
+      const value = text + (mode === 'prepend' ? '\n\n' : '');
+      inserted = true;
+      for (let i = 0; i < value.length; i += 400) inserted = document.execCommand('insertText', false, value.slice(i, i + 400)) && inserted;
+    } catch (_) { inserted = false; }
     if (!inserted) {
       const data = new DataTransfer();
       data.setData('text/plain', text);
