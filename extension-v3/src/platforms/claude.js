@@ -20,9 +20,10 @@ export const composerSelectors = [
 ];
 
 // claude.ai virtualizes long transcripts; the DOM reader sweeps the scroller.
+// October 2026: answers are [data-testid="assistant-message"] (.font-claude-response is gone).
 export const dom = {
   root: 'main',
-  unit: '[data-testid="user-message"], .font-claude-response',
+  unit: '[data-testid="user-message"], [data-testid="assistant-message"], .font-claude-response',
   userMarker: '[data-testid="user-message"]',
   body: '',
   strip: 'button, .sr-only'

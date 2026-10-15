@@ -134,10 +134,16 @@
     return { role, ids: [...new Set(ids)], text, markdown };
   }
 
+  // The last visible chat root; the whole page when the site has none (Grok
+  // dropped <main> in October 2026).
+  function findRoot(config) {
+    const roots = [...document.querySelectorAll(config.root || 'main')].filter(isVisible);
+    return roots[roots.length - 1] || (document.querySelector(config.unit) ? document.body : null);
+  }
+
   // Reads every message by sweeping the (virtualized) scroller top to bottom.
   async function readDom(config, options = {}) {
-    const roots = [...document.querySelectorAll(config.root || 'main')].filter(isVisible);
-    const root = roots[roots.length - 1];
+    const root = findRoot(config);
     if (!root) return { units: [], swept: false };
 
     const collected = new Map();
@@ -229,7 +235,8 @@
     // Large text is inserted in pieces: ProseMirror editors (ChatGPT, Claude) show
     // one big insertText but do not take it into their state (verified live).
     try {
-      const value = mode === 'append' && hasText ? `\n\n${text}` : text + (mode === 'prepend' ? '\n\n' : '');
+      // In rich editors one newline already starts a new paragraph.
+      const value = mode === 'append' && hasText ? `\n${text}` : text + (mode === 'prepend' ? '\n\n' : '');
       inserted = true;
       for (let i = 0; i < value.length; i += 400) inserted = document.execCommand('insertText', false, value.slice(i, i + 400)) && inserted;
     } catch (_) { inserted = false; }
@@ -298,19 +305,21 @@
   // message id when the page exposes ids, otherwise by a text fingerprint; long
   // virtualized chats are scrolled near the expected position first.
   async function locateMessage(config, descriptor) {
-    const normalize = (value) => String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
+    // Letters and digits only, so markdown (**, #, links) in the API text still
+    // matches the rendered text on the page.
+    const normalize = (value) => String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
     const ids = new Set((descriptor.ids || []).map(String));
-    const fingerprint = normalize(descriptor.text).slice(0, 80);
+    const fingerprint = normalize(descriptor.text).slice(0, 60);
     const find = () => {
-      const roots = [...document.querySelectorAll(config.root || 'main')].filter(isVisible);
-      const root = roots[roots.length - 1];
+      const root = findRoot(config);
       if (!root) return null;
       const units = [...root.querySelectorAll(config.unit)].filter(isVisible);
       return units.find((unit) => {
         const own = config.idsAttribute ? String(unit.getAttribute(config.idsAttribute) || '').split(/\s+/) : [];
         const nested = [...unit.querySelectorAll('[data-message-id]')].map((node) => node.getAttribute('data-message-id'));
-        return [...own, ...nested, unit.id?.replace(/^response-/, '')].some((id) => id && ids.has(id));
-      }) || (fingerprint.length > 12 ? units.find((unit) => normalize(unit.innerText).includes(fingerprint)) : null);
+        const wrapper = unit.closest('[id^="response-"]')?.id;
+        return [...own, ...nested, unit.id?.replace(/^response-/, ''), wrapper?.replace(/^response-/, '')].some((id) => id && ids.has(id));
+      }) || (fingerprint.length > 8 ? units.find((unit) => normalize(unit.innerText).includes(fingerprint)) : null);
     };
     let target = find();
     if (!target) {

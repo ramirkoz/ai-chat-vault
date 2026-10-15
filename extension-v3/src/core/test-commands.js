@@ -37,6 +37,13 @@ const commands = {
     return { version: chrome.runtime.getManifest().version, id: chrome.runtime.id, testModeUntil: new Date(await testModeUntil()).toISOString() };
   },
 
+  // Reloads the extension from its folder (unpacked developer install), so a
+  // tester can pick up new files without chrome://extensions.
+  async reload() {
+    setTimeout(() => chrome.runtime.reload(), 300);
+    return { reloading: true, version: chrome.runtime.getManifest().version };
+  },
+
   // "Show in chat": scrolls to message N of this chat and highlights it.
   async locate(tab, { index = 0 } = {}) {
     const conversation = await readConversation(tab);
