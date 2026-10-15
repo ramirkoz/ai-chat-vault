@@ -1,141 +1,66 @@
-# Privacy Policy — ChatExtra Toolkit
+# Privacy Policy — AI Chat Vault
 
-**Effective date:** 7 August 2026  
-**Current Chrome Web Store version:** 1.4.0 under the previous product name  
-**Current release candidate:** 2.0.0 — ChatExtra Toolkit
+**Effective date:** 15 October 2026
+**Applies to:** AI Chat Vault 3.0.0 and later (Chrome Web Store item `ingagbhapppiiiccljbhiledobnmhhfb`, previously published as "GPT Project & Memory Tools", "ChatExtra Toolkit" and "Thread to Markdown for ChatGPT").
 
 ## Summary
 
-ChatExtra Toolkit exports the conversation currently open in the user's browser to local files, stores reusable prompts and user-saved conversation snapshots locally in the browser profile, and can insert user-requested website content into a new ChatGPT chat. The extension does not send conversation content, saved prompts, saved workspace records, selected text, extracted webpage content, YouTube transcript text, screenshots, browsing history, account information, or generated files to the developer or to an extension-operated service.
+AI Chat Vault reads, exports, saves and continues conversations from ChatGPT, Claude, Gemini and Grok, keeps a local prompt library, and can put user-chosen web page content into a new chat. Everything is processed inside the user's browser. The extension has no server: it does not send conversation content, prompts, saved chats, page content, screenshots, transcripts, URLs, account information or files to the developer or to any third party. There is no analytics, telemetry, advertising, tracking or remote code.
 
-## Data handled by the extension
+## What the extension reads, and when
 
-After the user starts an export, navigation, save-to-workspace, selected-text, webpage, screenshot, or YouTube transcript action, the extension reads or captures the active page only as needed for that requested operation. This content may include personal communications, uploaded images, attachment labels, page titles, URLs, visible page pixels, and user-generated content because it comes from the page or conversation chosen by the user.
+| Data | When | Where it goes |
+|---|---|---|
+| The open conversation in ChatGPT, Claude, Gemini or Grok | When the user opens the side panel on that conversation, exports, copies, saves or continues it | Shown in the side panel; written only to files the user downloads or to the local library |
+| Files of that conversation (uploads, images, created files) | Only when the user chooses **ZIP with files** | Into the ZIP the user downloads |
+| Chats of a ChatGPT Project | Only when the user turns on **Automatic project memory**, then when a chat of that project is opened | Local library in the browser |
+| Selected text, page text, visible-area screenshot, YouTube subtitles of the active tab | Only after the user clicks the action in the side panel or the right-click menu | Into the input of a new chat that the user chooses; never sent automatically |
+| Prompts the user writes | When the user saves them | Local browser storage |
 
-The extension:
+The extension reads the chat sites with the user's own signed-in session, the same way the site itself does (for example ChatGPT's conversation endpoint or Claude's conversation endpoint). It does not read other sites, cookies, passwords, browsing history or other tabs.
 
-- does not collect data on a developer-controlled remote server;
-- does not transmit conversation content, prompts, workspace records, selected text, extracted webpage content, screenshots, transcript text, or URLs to the developer;
-- does not use analytics, telemetry, advertising, tracking pixels, cookies, or fingerprinting;
-- does not sell or share user data;
-- does not retain temporary handoff content after completing the requested action;
-- retains a conversation copy only when the user explicitly chooses **Save current chat** in the local workspace;
-- does not run continuously on unrelated websites.
+## Local storage
 
-Generated Markdown, HTML, PDF, ZIP, text, JSON, bulk-export, and backup files are saved through browser-local features. The user controls those files and can delete them at any time.
+- **Library** (saved chats, project memory, folders, tags, notes): the extension's IndexedDB in the current browser profile.
+- **Prompts and settings:** `chrome.storage.local` of the extension.
+- **Temporary data** (a prepared page text or screenshot waiting for the user to pick an assistant, a print job for PDF export): `chrome.storage.session`, cleared when the browser closes or after use.
 
-## Local prompt library
+The user can delete saved chats and prompts in the side panel, export them as a backup file, or remove everything by uninstalling the extension. Data is not synchronised between devices.
 
-The local prompt library stores prompt names and prompt text in storage belonging to the extension inside the current browser profile.
+## Automatic project memory
 
-- Prompt data is not sent to the developer or to another service.
-- Prompt data is available only to this extension in that browser profile.
-- The library does not require a new browser permission.
-- The user can edit or delete saved prompts from the extension interface.
-- Removing the extension or clearing its data may remove the saved library.
+Off by default. When the user turns it on, opening a chat in a ChatGPT Project copies that project's chats into the local library (only new or changed chats). When the user sends the first message of a new chat in that project, excerpts from earlier project chats are inserted in front of the message as a clearly marked `[PROJECT MEMORY: …]` block. The message is sent to ChatGPT by the user's own action, as part of the user's ChatGPT conversation. Nothing is added to ChatGPT's Project files.
 
-## Local conversation workspace
+## Continuing a chat in another assistant
 
-Version 2.0.0 adds an optional local workspace for conversations that the user explicitly chooses to save.
+When the user clicks **Continue in …**, the selected messages are put into the input of a new chat at the chosen assistant (ChatGPT, Claude, Gemini or Grok). The text is not sent until the user sends it. That assistant then processes it under its own privacy policy.
 
-A saved workspace record may contain:
+## Test mode
 
-- the ChatGPT conversation URL;
-- the conversation title;
-- a user-defined folder;
-- user-defined tags;
-- a user-defined note;
-- a Markdown snapshot of the conversation at the time it was saved or updated;
-- message count and local save/update timestamps.
+Off by default and switches itself off after 60 minutes. While on, a script on the four chat sites accepts test commands from the page and returns structural reports only (message counts, roles, sizes, error reasons) — never conversation text.
 
-Workspace records are stored in the extension's IndexedDB database inside the current browser profile. They are not sent to the developer or to an extension-operated service. A saved snapshot is not continuously synchronized with ChatGPT; it changes only when the user explicitly updates the saved chat.
+## Permissions
 
-The user can search, filter, reopen, bulk-export, or delete saved records. Removing the extension or clearing its data may remove the local workspace.
+- **activeTab** — read the tab where the user opened the extension (page text, selection, visible screenshot).
+- **scripting** — run the reader in the chat page or in the active tab after a user action.
+- **sidePanel** — show the user interface next to the page.
+- **contextMenus** — the right-click actions for sending page content to a chat.
+- **downloads** — save exports, ZIP archives and backups.
+- **storage** — prompts, settings and temporary data.
+- **Optional host access** to `chatgpt.com`, `chat.openai.com`, `claude.ai`, `gemini.google.com`, `*.googleusercontent.com` (Gemini images) and `grok.com` — requested separately, only when the user first uses the extension on that site.
 
-## Workspace bulk export and backups
+## Limited use
 
-The user can explicitly export selected saved conversations into a local ZIP file. The ZIP contains Markdown snapshots and local metadata such as folders, tags, notes, titles, source URLs, and timestamps.
-
-The user can also create a JSON backup containing the local workspace and the local prompt library.
-
-- Bulk export and backup files are created only after an explicit user action.
-- Files are written to the user's local download location and are not uploaded by the extension.
-- Restore reads only a backup file explicitly selected by the user.
-- Restore replaces the local workspace and prompt library only after user confirmation.
-- Backup and restore do not add a browser permission or use a developer server.
-
-## Selected-text handoff
-
-The selected-text feature reads only text explicitly selected by the user on the active page. After the user approves optional access to `https://chatgpt.com/*`, the extension opens a new ChatGPT tab and inserts the selected text into the message field.
-
-- The extension does not automatically send the message.
-- The selected text is passed directly between the active page and the ChatGPT tab inside the browser.
-- The extension does not store the selected text after insertion.
-- The selected text is not sent to the developer or to an extension-operated service.
-- Optional ChatGPT access is requested only when the user activates a handoff feature.
-
-## Webpage handoff
-
-The webpage feature reads the current page title, source URL, and visible text only after the user starts the webpage handoff action. Common navigation, forms, scripts, sidebars, advertisements, and other page chrome are removed locally before the prepared text is inserted into a new ChatGPT tab.
-
-- The extension does not automatically send the message.
-- Extracted webpage content is processed only in the browser and is not retained after insertion.
-- Long page text is shortened locally to keep the handoff within the configured limit.
-- Extracted webpage content and the source URL are not sent to the developer or to an extension-operated service.
-
-## YouTube transcript handoff
-
-When the user activates the YouTube transcript action on a supported YouTube page, the extension reads transcript or caption text exposed by the currently open video page and prepares it for insertion into a new ChatGPT tab.
-
-- The extension does not automatically send the message.
-- Transcript text is read only after the user requests the action.
-- Transcript text is not retained by the extension after the handoff.
-- Transcript text is not sent to the developer or to an extension-operated service.
-
-## Screenshot handoff
-
-The screenshot feature captures only the currently visible area of the active browser tab after the user starts the screenshot action. The image is encoded locally and attached to a new ChatGPT message.
-
-- The extension does not automatically send the message.
-- The screenshot is not saved by the extension as a local file and is not retained after the handoff completes.
-- The screenshot is passed directly from the active tab to the new ChatGPT tab inside the browser.
-- Screenshot data is not sent to the developer or to an extension-operated service.
-- A size limit is applied before the screenshot is handed off.
-
-## ZIP images and attachments
-
-The ZIP export can capture reusable images and attachments exposed by the currently open ChatGPT conversation. To do this, the page may re-read the file URL already provided by ChatGPT using the user's existing ChatGPT session.
-
-- Captured bytes are written only into the local ZIP package.
-- They are not sent to the developer or another extension service.
-- Files that cannot be safely re-read are not included; the ZIP manifest records the skipped reason.
-- Capture is limited to 40 detected files, 6 MB per file, and 16 MB total.
-
-## Permission use
-
-- **activeTab:** access only to the page or conversation where the user explicitly opens the extension, including a user-requested visible screenshot.
-- **scripting:** read selected text, cleaned webpage content, YouTube transcript text, the open conversation, navigation targets, and reusable assets after the user requests an action.
-- **downloads:** save generated export files, bulk workspace ZIP files, and local backups.
-- **Optional `https://chatgpt.com/*` access:** insert user-requested text or attach a user-requested screenshot in a new ChatGPT message after explicit approval.
-
-No broad mandatory host permission is requested. The local prompt library and 2.0 workspace use browser storage owned by the extension and require no additional browser permission.
-
-## Limited Use
-
-Use of information received from browser permissions is limited to the extension's stated purposes: navigating and exporting the user-selected conversation, maintaining user-controlled local prompts and saved conversation snapshots, and handing user-requested page content to ChatGPT. The information is not transferred to the developer, used for advertising, used for profiling, or made available for human review by the developer.
-
-## Security
-
-Processing, package generation, navigation, local workspace storage, prompt storage, handoff actions, bulk export, and backup generation happen inside the browser. The extension contains no remotely hosted code. ZIP asset capture may re-request a file URL already exposed by the active ChatGPT page, but the extension does not send exported content, workspace records, prompts, selected text, extracted webpage content, transcript text, or screenshots to a developer-controlled server or to an unrelated third party.
+Information obtained through these permissions is used only to provide the features described above. It is not transferred to the developer or third parties, not used for advertising, credit-worthiness or lending, not sold, and not read by humans.
 
 ## Changes
 
-Chrome Web Store privacy disclosures will be updated when version 2.0.0 is submitted to the existing store item.
+Changes to this policy are published in this file in the public repository, with the date at the top.
 
 ## Contact
 
-For privacy or support questions: **kozyriev@uafree.org**
+**kozyriev@uafree.org** · https://github.com/ramirkoz/thread-to-markdown-for-chatgpt/issues
 
-## Trademark notice
+## Trademarks
 
-ChatExtra Toolkit is an independent, unofficial extension. It is not created, supported, certified, sponsored, or endorsed by OpenAI. ChatGPT and OpenAI are trademarks of OpenAI.
+AI Chat Vault is an independent extension and is not affiliated with, endorsed or sponsored by OpenAI, Anthropic, Google or xAI. ChatGPT, Claude, Gemini and Grok are trademarks of their owners.

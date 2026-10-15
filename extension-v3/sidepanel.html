@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AI Chat Vault</title>
+  <link rel="stylesheet" href="src/ui/sidepanel.css">
+</head>
+<body>
+  <header class="top">
+    <span id="platform-badge" class="badge" hidden></span>
+    <h1 id="title">AI Chat Vault</h1>
+    <button id="refresh" class="icon" type="button" aria-label="Refresh">↻</button>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="tab-conversation" aria-selected="true" data-tab="conversation"></button>
+    <button role="tab" id="tab-library" aria-selected="false" data-tab="library"></button>
+    <button role="tab" id="tab-prompts" aria-selected="false" data-tab="prompts"></button>
+    <button role="tab" id="tab-site" aria-selected="false" data-tab="site"></button>
+  </nav>
+
+  <section id="panel-conversation" class="panel">
+    <p id="status" class="status" role="status"></p>
+    <button id="grant" class="primary" type="button" hidden></button>
+
+    <div id="conversation" hidden>
+      <input id="message-search" type="search">
+      <div class="row">
+        <div class="segmented" id="role-filter">
+          <button type="button" data-role="all" aria-pressed="true"></button>
+          <button type="button" data-role="user" aria-pressed="false"></button>
+          <button type="button" data-role="assistant" aria-pressed="false"></button>
+        </div>
+        <span class="spacer"></span>
+        <button type="button" class="link" id="select-all"></button>
+        <button type="button" class="link" id="select-none"></button>
+      </div>
+      <p id="selection-count" class="muted"></p>
+      <ol id="messages" class="messages"></ol>
+
+      <div class="actions">
+        <div class="row">
+          <select id="format" aria-label="Format">
+            <option value="zip" id="format-zip">ZIP</option>
+            <option value="md">Markdown</option>
+            <option value="html">HTML</option>
+            <option value="pdf">PDF</option>
+            <option value="json">JSON</option>
+          </select>
+          <button id="export" class="primary" type="button"></button>
+          <button id="copy" type="button"></button>
+        </div>
+        <button id="save" type="button"></button>
+        <label class="field">
+          <span id="handoff-note-label"></span>
+          <input id="handoff-note" type="text">
+        </label>
+        <div class="row wrap">
+          <span id="continue-label" class="muted"></span>
+          <div id="handoff-targets" class="row wrap"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="panel-library" class="panel" hidden>
+    <div class="row">
+      <input id="search" type="search">
+      <select id="platform-filter"></select>
+    </div>
+    <select id="folder-filter"></select>
+    <p id="library-status" class="status" role="status"></p>
+    <button id="insert-context" class="primary" type="button" hidden></button>
+    <div id="bulk" class="row wrap" hidden>
+      <span id="bulk-count" class="muted"></span>
+      <span class="spacer"></span>
+      <button id="bulk-export" type="button"></button>
+      <button id="bulk-clear" type="button" class="link"></button>
+    </div>
+    <ul id="library" class="library"></ul>
+    <section class="memory">
+      <label class="row">
+        <input id="auto-memory" type="checkbox">
+        <strong id="auto-memory-label"></strong>
+      </label>
+      <p id="auto-memory-help" class="muted"></p>
+      <div id="project-memory" class="row wrap" hidden>
+        <span id="project-memory-status" class="muted"></span>
+        <button id="project-sync" type="button" class="link"></button>
+      </div>
+    </section>
+    <label class="row test-mode">
+      <input id="test-mode" type="checkbox">
+      <span id="test-mode-label"></span>
+    </label>
+    <p id="test-mode-status" class="muted"></p>
+    <div class="row footer">
+      <button id="backup" type="button" class="link"></button>
+      <button id="restore" type="button" class="link"></button>
+      <input id="restore-file" type="file" accept="application/json" hidden>
+    </div>
+  </section>
+
+  <section id="panel-prompts" class="panel" hidden>
+    <div class="row">
+      <input id="prompt-search" type="search">
+      <button id="prompt-new" type="button" class="primary"></button>
+    </div>
+    <label class="field">
+      <span id="prompt-target-label"></span>
+      <select id="prompt-target"></select>
+    </label>
+    <form id="prompt-editor" class="editor" hidden>
+      <input id="prompt-title" type="text" maxlength="120" required>
+      <textarea id="prompt-content" rows="8" maxlength="12000" required></textarea>
+      <div class="row">
+        <button id="prompt-save" type="submit" class="primary"></button>
+        <button id="prompt-cancel" type="button" class="link"></button>
+      </div>
+    </form>
+    <p id="prompt-status" class="status" role="status"></p>
+    <ul id="prompts" class="library"></ul>
+    <div class="row footer">
+      <button id="prompt-export" type="button" class="link"></button>
+      <button id="prompt-import" type="button" class="link"></button>
+      <input id="prompt-import-file" type="file" accept="application/json" hidden>
+    </div>
+  </section>
+
+  <section id="panel-site" class="panel" hidden>
+    <p id="site-intro" class="muted"></p>
+    <label class="field">
+      <span id="site-target-label"></span>
+      <select id="site-target"></select>
+    </label>
+    <div class="site-actions">
+      <button type="button" data-kind="selection" id="site-selection"></button>
+      <button type="button" data-kind="page" id="site-page"></button>
+      <button type="button" data-kind="screenshot" id="site-screenshot"></button>
+      <button type="button" data-kind="youtube" id="site-youtube"></button>
+    </div>
+    <p id="site-status" class="status" role="status"></p>
+    <div id="site-pending" class="pending" hidden>
+      <p id="site-pending-label" class="muted"></p>
+      <pre id="site-pending-preview"></pre>
+      <img id="site-pending-image" alt="" hidden>
+      <div class="row">
+        <button id="site-send" type="button" class="primary"></button>
+        <button id="site-discard" type="button" class="link"></button>
+      </div>
+    </div>
+    <p id="site-menu-hint" class="muted"></p>
+  </section>
+
+  <script type="module" src="src/ui/sidepanel.js"></script>
+</body>
+</html>

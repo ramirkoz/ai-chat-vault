@@ -1,3 +1,18 @@
+## 3.0.0 — AI Chat Vault
+
+- Renamed to **AI Chat Vault**; rewritten as a side-panel extension (`extension-v3/`).
+- Support for ChatGPT, Claude, Gemini and Grok through each site's own conversation API, with a page-reading fallback.
+- Continue a conversation in another assistant; insert library search results as context into any chat.
+- One local library for all assistants: folders, tags, notes, folder filter, full-text search, bulk ZIP export, backup/restore.
+- ZIP with files for all four platforms: SHA-256 deduplication, retries, `MISSING_FILES.txt`, split into ~300 MB parts.
+- Ported from 2.x: automatic ChatGPT project memory, prompt library, PDF export, message search and "show in chat", selected text / page text / screenshot / YouTube subtitles to a chat (now also from the right-click menu and to any assistant).
+- YouTube: reads the 2026 transcript panel (caption files are empty without the player's token).
+- Page text skips hidden menus (e.g. Wikipedia's language list).
+- Migration of 2.x saved chats, prompts and the project-memory switch on update.
+- Ukrainian interface for Ukrainian browsers, English for all others.
+- Opt-in test mode for automated testing (structural reports only, 60 minutes).
+- 36 automated tests in CI.
+
 ## 2.33.0
 
 - Fixed the main export regression caused by the September 2026 ChatGPT UI: the reader found only one "message" (the whole page text) because the legacy `article` / `[data-message-author-role]` markup is gone and the thread is now virtualized.
