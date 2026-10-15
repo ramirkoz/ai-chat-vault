@@ -371,7 +371,24 @@ export async function readYoutubeTranscriptPanel(maxLength) {
     return output;
   };
 
+  // 2026 transcript panel: <transcript-segment-view-model> with a timestamp, its
+  // spoken label ("1 секунда") and the text in an attributed string.
+  const readViewModelSegments = () => {
+    const lines = [];
+    for (const node of document.querySelectorAll('transcript-segment-view-model')) {
+      const textNode = node.querySelector('.ytAttributedStringHost, [class*="AttributedString"], .yt-core-attributed-string');
+      const raw = textNode ? textNode.textContent : [...node.querySelectorAll('*')]
+        .filter((item) => !item.children.length && !/timestamp/i.test(String(item.className)))
+        .map((item) => item.textContent).join(' ');
+      const line = normalize(String(raw || '').replace(/\s*\n\s*/g, ' '));
+      if (line && lines[lines.length - 1] !== line) lines.push(line);
+    }
+    return lines;
+  };
+
   const readSegmentNodes = () => {
+    const modern = readViewModelSegments();
+    if (modern.length) return modern;
     const selectors = [
       'ytd-transcript-segment-renderer',
       'ytd-transcript-segment-view-model',
@@ -420,6 +437,7 @@ export async function readYoutubeTranscriptPanel(maxLength) {
 
   const readNow = () => {
     const segmentLines = readSegmentNodes();
+    if (segmentLines.length >= 1 && document.querySelector('transcript-segment-view-model')) return segmentLines;
     if (segmentLines.length >= 2) return segmentLines;
     return readPanelText();
   };

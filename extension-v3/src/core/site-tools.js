@@ -26,11 +26,12 @@ export async function readFromTab(tab, kind, language = 'en') {
   if (kind === 'selection') return run(tab.id, readSelection, [MAX_SELECTION]);
   if (kind === 'page') return run(tab.id, extractReadableWebpage, [MAX_PAGE_TEXT]);
   if (kind === 'youtube') {
-    // Same order as 2.x: player captions, the open transcript panel, then the
-    // caption tracks from the player response.
+    // The transcript panel first: since 2026 YouTube's caption files come back
+    // empty without the player's proof-of-origin token (verified 2026-10-15), so
+    // the caption-track readers are only a fallback.
     for (const [func, args] of [
-      [readActiveYoutubeCaptions, [language, MAX_TRANSCRIPT]],
       [readYoutubeTranscriptPanel, [MAX_TRANSCRIPT]],
+      [readActiveYoutubeCaptions, [language, MAX_TRANSCRIPT]],
       [extractYoutubeTranscript, [language, MAX_TRANSCRIPT]]
     ]) {
       const result = await run(tab.id, func, args, 'MAIN').catch(() => null);
