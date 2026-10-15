@@ -123,6 +123,10 @@
         for (let i = 0; i < 40 && !draftOf(composer()).includes('[CURRENT REQUEST]'); i += 1) await wait(100);
         const holds = draftOf(composer()).includes('[CURRENT REQUEST]');
         trace({ holdsMemory: holds });
+        // ChatGPT copies the editor's text into the state it sends with a delay:
+        // Enter right after inserting sent only the old draft, Enter 800 ms later
+        // sent everything (live, 2026-10-15). 1.2 s leaves a margin.
+        if (holds) await wait(1200);
         if (!holds && !draftOf(composer()).includes(draft)) setComposerText(composer() || editor, draft);
       }
     } catch (error) {
