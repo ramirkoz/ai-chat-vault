@@ -100,7 +100,7 @@
       setComposerText(editor, draft);
       trace({ restored: true });
       injectedFor = ''; // the next send gets the memory again
-      notice('AI Chat Memory Tools: повідомлення не надіслалося, ваш текст повернуто в поле вводу. Надішліть його ще раз. / The message was not sent; your text is back in the input.');
+      notice('AI Chat Vault: повідомлення не надіслалося, ваш текст повернуто в поле вводу. Надішліть його ще раз. / The message was not sent; your text is back in the input.');
     }
   }
 

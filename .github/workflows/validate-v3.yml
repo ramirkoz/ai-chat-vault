@@ -1,4 +1,4 @@
-name: Validate 3.0 preview
+name: Validate AI Chat Vault 3.0
 
 on:
   push:
@@ -26,7 +26,8 @@ jobs:
         run: |
           set -euo pipefail
           find extension-v3 -name '*.js' -print0 | xargs -0 -n1 node --check
-          node -e "const m=require('./extension-v3/manifest.json'); if(m.manifest_version!==3||!m.side_panel||!m.background.type) process.exit(1); console.log('manifest', m.version)"
+          node -e "const m=require('./extension-v3/manifest.json'); if(m.manifest_version!==3||!m.side_panel||!m.background.type) process.exit(1); for (const l of ['en','uk']) { const d=require('./extension-v3/_locales/'+l+'/messages.json').extensionDescription.message; if (d.length>132) { console.error(l,'description too long'); process.exit(1); } } console.log('manifest', m.version)"
 
       - name: Run adapter and core tests
-        run: node --test tests/v3/platforms.test.mjs tests/v3/core.test.mjs tests/v3/package.test.mjs tests/v3/prune.test.mjs tests/v3/memory.test.mjs tests/v3/sidepanel-smoke.test.mjs
+        shell: bash
+        run: node --test tests/v3/*.test.mjs

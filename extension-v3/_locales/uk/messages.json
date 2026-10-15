@@ -1,8 +1,8 @@
 {
   "extensionName": {
-    "message": "AI Chat Memory Tools"
+    "message": "AI Chat Vault"
   },
   "extensionDescription": {
-    "message": "Читайте, експортуйте, шукайте й продовжуйте чати ChatGPT, Claude, Gemini та Grok. Усе зберігається лише у вашому браузері."
+    "message": "Експорт, пошук і продовження чатів ChatGPT, Claude, Gemini та Grok. Пам’ять проєктів і промпти. Усе лишається у вашому браузері."
   }
 }

@@ -38,10 +38,15 @@ test('side panel module evaluates and wires its controls', async () => {
   globalThis.Option = function Option(text, value) { return { text, value }; };
   Object.defineProperty(globalThis, 'navigator', { value: { language: 'uk-UA', clipboard: { writeText: async () => {} } }, configurable: true });
   globalThis.location = { search: '' };
+  globalThis.localStorage = { getItem: () => null };
   globalThis.chrome = {
     tabs: { query: async () => [], get: async () => null, onActivated: event(), onUpdated: event(), create: async () => ({}) },
     permissions: { contains: async () => false, request: async () => false, onAdded: event() },
-    storage: { local: { get: async () => ({}), set: async () => {}, remove: async () => {} } },
+    storage: {
+      local: { get: async () => ({}), set: async () => {}, remove: async () => {} },
+      session: { get: async () => ({}), set: async () => {}, remove: async () => {} },
+      onChanged: event()
+    },
     scripting: {},
     downloads: {},
     runtime: { getManifest: () => ({ version: 'test' }) }
@@ -55,4 +60,9 @@ test('side panel module evaluates and wires its controls', async () => {
   assert.ok(elements['test-mode'].listeners.change?.length, 'test mode switch is wired');
   assert.ok(elements.export.listeners.click?.length, 'export button is wired');
   assert.equal(elements['panel-library'].hidden, false, 'panels start as declared in HTML');
+  assert.equal(elements['tab-prompts'].textContent, 'Промпти');
+  assert.equal(elements['tab-site'].textContent, 'Сайт');
+  assert.ok(elements['prompt-editor'].listeners.submit?.length, 'prompt editor is wired');
+  assert.ok(elements['site-screenshot'].listeners.click?.length, 'site actions are wired');
+  assert.ok(elements['bulk-export'].listeners.click?.length, 'bulk export is wired');
 });

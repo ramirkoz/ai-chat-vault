@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PDF</title>
+  <style>
+    .print-guide{font:14px/1.5 system-ui,sans-serif;max-width:860px;margin:16px auto;padding:14px 18px;border:1px solid #c9c9c3;border-radius:10px;background:#fffbe6;color:#1c1c1a}
+    .print-guide h1{font-size:16px;margin:0 0 6px}
+    .print-guide button{font:inherit;margin-top:8px;padding:8px 14px;border-radius:8px;border:1px solid #2456d6;background:#2456d6;color:#fff;cursor:pointer}
+    @media print{.print-guide{display:none!important}}
+  </style>
+</head>
+<body>
+  <p class="print-guide" id="loading">…</p>
+  <script type="module" src="src/ui/print.js"></script>
+</body>
+</html>

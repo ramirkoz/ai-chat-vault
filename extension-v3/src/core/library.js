@@ -43,6 +43,7 @@ export async function saveConversation(conversation, extra = {}) {
     project: extra.project ?? existing?.project ?? '',
     projectName: extra.projectName ?? existing?.projectName ?? '',
     remoteUpdatedAt: extra.remoteUpdatedAt ?? existing?.remoteUpdatedAt ?? '',
+    folder: extra.folder ?? existing?.folder ?? '',
     tags: extra.tags ?? existing?.tags ?? [],
     note: extra.note ?? existing?.note ?? '',
     savedAt: new Date().toISOString(),
@@ -60,6 +61,21 @@ export async function getRecord(key) {
 export async function listRecords() {
   const records = await withStore('readonly', (store) => store.getAll());
   return (records || []).sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+}
+
+// Folder, tags and note of a saved chat (Workspace fields from 2.x).
+export async function updateRecordMeta(key, { folder, tags, note }) {
+  const record = await getRecord(key);
+  if (!record) throw new Error('not-found');
+  const next = {
+    ...record,
+    folder: String(folder ?? record.folder ?? '').trim().slice(0, 120),
+    tags: (Array.isArray(tags) ? tags : String(tags ?? '').split(','))
+      .map((tag) => String(tag).trim()).filter(Boolean).slice(0, 20),
+    note: String(note ?? record.note ?? '').slice(0, 4000)
+  };
+  await withStore('readwrite', (store) => store.put(next));
+  return next;
 }
 
 export async function deleteRecord(key) {

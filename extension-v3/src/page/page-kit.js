@@ -2,7 +2,7 @@
 // Exposes globalThis.__aiChatKit; functions passed to chrome.scripting.executeScript
 // call into it because they cannot import modules.
 (() => {
-  if (globalThis.__aiChatKit?.version === 1) return;
+  if (globalThis.__aiChatKit?.version === 3) return;
 
   const cleanText = (value) => String(value || '')
     .replace(/\u00a0/g, ' ')
@@ -211,7 +211,8 @@
     editor.focus();
     if ('value' in editor) {
       const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(editor), 'value')?.set;
-      const value = mode === 'prepend' ? `${text}\n\n${editor.value}` : text;
+      const value = mode === 'prepend' ? `${text}\n\n${editor.value}`
+        : mode === 'append' && editor.value.trim() ? `${editor.value}\n\n${text}` : text;
       if (setter) setter.call(editor, value); else editor.value = value;
       editor.dispatchEvent(new Event('input', { bubbles: true }));
       return { ok: true };
@@ -219,14 +220,16 @@
     const selection = getSelection();
     const range = document.createRange();
     range.selectNodeContents(editor);
+    const hasText = Boolean(editor.innerText.trim());
     if (mode === 'prepend') range.collapse(true);
+    if (mode === 'append') range.collapse(false);
     selection.removeAllRanges();
     selection.addRange(range);
     let inserted = false;
     // Large text is inserted in pieces: ProseMirror editors (ChatGPT, Claude) show
     // one big insertText but do not take it into their state (verified live).
     try {
-      const value = text + (mode === 'prepend' ? '\n\n' : '');
+      const value = mode === 'append' && hasText ? `\n\n${text}` : text + (mode === 'prepend' ? '\n\n' : '');
       inserted = true;
       for (let i = 0; i < value.length; i += 400) inserted = document.execCommand('insertText', false, value.slice(i, i + 400)) && inserted;
     } catch (_) { inserted = false; }
@@ -248,5 +251,88 @@
     return false;
   }
 
-  globalThis.__aiChatKit = { version: 1, readDom, insertIntoComposer, waitForComposer, toMarkdown, cleanText };
+  // Attaches an image to the chat input (ported from 2.x screenshot handoff):
+  // a file input that accepts images first, then a paste event on the editor.
+  async function attachImage(selectors, dataUrl, filename) {
+    const [meta, base64] = String(dataUrl).split(',');
+    const mime = meta.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
+    const binary = atob(base64 || '');
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    const file = new File([bytes], filename || 'screenshot.jpg', { type: mime });
+    const attachmentCount = () => document.querySelectorAll('[data-testid*="attachment" i], [data-testid*="upload" i], [data-testid*="file" i] img, img[src^="blob:"], img[src^="data:image/"]').length;
+    const waitForAttachment = async (before) => {
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline) {
+        if (attachmentCount() > before) return true;
+        await wait(200);
+      }
+      return false;
+    };
+
+    for (const input of document.querySelectorAll('input[type="file"]')) {
+      const accept = String(input.getAttribute('accept') || '').toLowerCase();
+      if (accept && !accept.includes('image') && !accept.includes('*')) continue;
+      try {
+        const before = attachmentCount();
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        input.files = transfer.files;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        if (await waitForAttachment(before)) return { ok: true, method: 'file-input' };
+      } catch (_) {}
+    }
+
+    const editor = findComposer(selectors);
+    if (!editor) return { ok: false, error: 'composer-not-found' };
+    const before = attachmentCount();
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    editor.focus();
+    editor.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: transfer }));
+    return (await waitForAttachment(before)) ? { ok: true, method: 'paste' } : { ok: false, error: 'attach-rejected' };
+  }
+
+  // Scrolls to one message and highlights it (ported from 2.x navigation): by
+  // message id when the page exposes ids, otherwise by a text fingerprint; long
+  // virtualized chats are scrolled near the expected position first.
+  async function locateMessage(config, descriptor) {
+    const normalize = (value) => String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
+    const ids = new Set((descriptor.ids || []).map(String));
+    const fingerprint = normalize(descriptor.text).slice(0, 80);
+    const find = () => {
+      const roots = [...document.querySelectorAll(config.root || 'main')].filter(isVisible);
+      const root = roots[roots.length - 1];
+      if (!root) return null;
+      const units = [...root.querySelectorAll(config.unit)].filter(isVisible);
+      return units.find((unit) => {
+        const own = config.idsAttribute ? String(unit.getAttribute(config.idsAttribute) || '').split(/\s+/) : [];
+        const nested = [...unit.querySelectorAll('[data-message-id]')].map((node) => node.getAttribute('data-message-id'));
+        return [...own, ...nested, unit.id?.replace(/^response-/, '')].some((id) => id && ids.has(id));
+      }) || (fingerprint.length > 12 ? units.find((unit) => normalize(unit.innerText).includes(fingerprint)) : null);
+    };
+    let target = find();
+    if (!target) {
+      const sample = document.querySelector(config.unit) || document.querySelector(config.root || 'main');
+      const scroller = findScroller(sample);
+      const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      const ratio = Math.min(1, Math.max(0, descriptor.index / Math.max(1, descriptor.total - 1)));
+      for (const position of [ratio, ratio - 0.15, ratio + 0.15, 0, 1]) {
+        scroller.scrollTop = Math.min(max, Math.max(0, position * max));
+        await wait(350);
+        target = find();
+        if (target) break;
+      }
+    }
+    if (!target) return { found: false };
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const previous = target.style.outline;
+    target.style.outline = '3px solid #22c55e';
+    target.style.outlineOffset = '4px';
+    setTimeout(() => { target.style.outline = previous; target.style.outlineOffset = ''; }, 1800);
+    return { found: true };
+  }
+
+  globalThis.__aiChatKit = { version: 3, readDom, insertIntoComposer, waitForComposer, attachImage, locateMessage, toMarkdown, cleanText };
 })();
