@@ -27,24 +27,33 @@
   const userMessages = () => document.querySelectorAll('[data-user-message-bubble="true"], [data-message-author-role="user"]').length;
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  // Last run, without any text, for diagnosing (read by test mode).
+  const trace = (fields) => {
+    let last = {};
+    try { last = JSON.parse(document.documentElement.dataset.acmMemoryLast || '{}'); } catch (_) {}
+    document.documentElement.dataset.acmMemoryLast = JSON.stringify({ ...last, ...fields });
+  };
+
   let bypass = false;
   let busy = false;
   let injectedFor = '';
 
+  // Returns how the text was applied: 'value', 'insertText' or 'failed'.
   function setComposerText(editor, value) {
     editor.focus();
     if ('value' in editor) {
       Object.getOwnPropertyDescriptor(Object.getPrototypeOf(editor), 'value')?.set?.call(editor, value);
       editor.dispatchEvent(new Event('input', { bubbles: true }));
-      return;
+      return 'value';
     }
     const selection = getSelection();
     const range = document.createRange();
     range.selectNodeContents(editor);
     selection.removeAllRanges();
     selection.addRange(range);
-    if (!document.execCommand('insertText', false, value)) editor.textContent = value;
-    editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
+    // Setting textContent on a ProseMirror editor is undone by the editor, so a
+    // failed insertText is reported instead of faked.
+    return document.execCommand('insertText', false, value) ? 'insertText' : 'failed';
   }
 
   function notice(text) {
@@ -64,6 +73,7 @@
       if (!target) await wait(100);
     }
     bypass = true;
+    trace({ sendWith: target ? 'button' : 'enter' });
     if (target) target.click();
     else composer()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
     setTimeout(() => { bypass = false; }, 300);
@@ -73,11 +83,13 @@
   async function guardAgainstLoss(draft, messagesBefore, pathBefore) {
     for (let i = 0; i < 40; i += 1) {
       await wait(250);
-      if (userMessages() > messagesBefore || location.pathname !== pathBefore) return;
+      if (userMessages() > messagesBefore || location.pathname !== pathBefore) { trace({ sent: true }); return; }
     }
+    trace({ sent: false });
     const editor = composer();
     if (editor && !draftOf(editor)) {
       setComposerText(editor, draft);
+      trace({ restored: true });
       injectedFor = ''; // the next send gets the memory again
       notice('AI Chat Memory Tools: повідомлення не надіслалося, ваш текст повернуто в поле вводу. Надішліть його ще раз. / The message was not sent; your text is back in the input.');
     }
@@ -91,16 +103,21 @@
     const messagesBefore = userMessages();
     const pathBefore = location.pathname;
     injectedFor = location.pathname;
+    document.documentElement.dataset.acmMemoryLast = JSON.stringify({ at: new Date().toISOString(), intercepted: true, draftLength: draft.length });
     try {
       const response = await chrome.runtime.sendMessage({ type: 'acm-memory-context', draft });
       const block = String(response?.block || '').trim();
+      trace({ blockLength: block.length, hits: response?.hits ?? 0 });
       if (block && editor) {
-        setComposerText(editor, `${block}\n\n[CURRENT REQUEST]\n${draft}`);
+        trace({ insert: setComposerText(editor, `${block}\n\n[CURRENT REQUEST]\n${draft}`) });
         // The editor applies long text asynchronously; wait until it holds it.
         for (let i = 0; i < 40 && !draftOf(composer()).includes('[CURRENT REQUEST]'); i += 1) await wait(100);
-        if (!draftOf(composer()).includes('[CURRENT REQUEST]')) setComposerText(composer() || editor, draft);
+        const holds = draftOf(composer()).includes('[CURRENT REQUEST]');
+        trace({ holdsMemory: holds });
+        if (!holds && !draftOf(composer()).includes(draft)) setComposerText(composer() || editor, draft);
       }
-    } catch (_) {
+    } catch (error) {
+      trace({ error: String(error?.message || error).slice(0, 120) });
       // Memory is best effort: the message is sent unchanged.
     } finally {
       busy = false;
