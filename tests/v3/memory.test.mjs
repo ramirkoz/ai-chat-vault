@@ -31,7 +31,8 @@ test('sync fetches only new or changed chats and retries a rate limit', async ()
       { id: 'broken', updateTime: 4000 }
     ] }),
     existing: async () => [
-      { id: 'same', updatedAt: new Date(1000 * 1000).toISOString() },
+      // conversation time is earlier than the listing time, but the stored listing time matches
+      { id: 'same', updatedAt: new Date(900 * 1000).toISOString(), remoteUpdatedAt: new Date(1000 * 1000).toISOString() },
       { id: 'changed', updatedAt: new Date(1500 * 1000).toISOString() }
     ],
     fetchConversation: async (item) => {
@@ -45,8 +46,8 @@ test('sync fetches only new or changed chats and retries a rate limit', async ()
   });
   assert.deepEqual(fetched, ['changed', 'new', 'new', 'broken'], 'unchanged chat skipped, 429 retried once');
   assert.deepEqual(saved, [
-    { id: 'changed', project: 'chatgpt:g-p-1', projectName: 'Content' },
-    { id: 'new', project: 'chatgpt:g-p-1', projectName: 'Content' }
+    { id: 'changed', project: 'chatgpt:g-p-1', projectName: 'Content', remoteUpdatedAt: new Date(2000 * 1000).toISOString() },
+    { id: 'new', project: 'chatgpt:g-p-1', projectName: 'Content', remoteUpdatedAt: new Date(3000 * 1000).toISOString() }
   ]);
   assert.equal(stats.updated, 2);
   assert.equal(stats.unchanged, 1);

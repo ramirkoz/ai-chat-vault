@@ -35,13 +35,16 @@ export async function syncProject({ platformId, projectId, list, fetchConversati
     onProgress({ done: i, total: listing.items.length });
     const record = known.get(item.id);
     const remoteUpdated = toIso(item.updateTime);
-    if (record && remoteUpdated && record.updatedAt && record.updatedAt >= remoteUpdated) {
+    // The listing's time can be later than the time inside the conversation, so
+    // the listing time is stored and compared with itself next time (live: 8 of
+    // 18 unchanged chats were refetched when comparing with the conversation).
+    if (record && remoteUpdated && (record.remoteUpdatedAt || record.updatedAt) >= remoteUpdated) {
       stats.unchanged += 1;
       continue;
     }
     try {
       const conversation = await fetchConversation(item);
-      await save(conversation, { project: key, projectName: listing.name || record?.projectName || '' });
+      await save(conversation, { project: key, projectName: listing.name || record?.projectName || '', remoteUpdatedAt: remoteUpdated });
       stats.updated += 1;
     } catch (error) {
       if (error?.status === 429 && rateLimitPauses < 3) {
@@ -60,7 +63,8 @@ export async function syncProject({ platformId, projectId, list, fetchConversati
 }
 
 // Context block for the first message of a new project chat.
-export function memoryContext(records, { platformId, projectId, query, excludeId = '', limit = 11000 }) {
+// 7 000 characters: ChatGPT's editor takes ~4 s to apply 10 KB of text.
+export function memoryContext(records, { platformId, projectId, query, excludeId = '', limit = 7000 }) {
   const key = projectKey(platformId, projectId);
   const projectRecords = records.filter((record) => record.project === key && record.id !== excludeId);
   if (!projectRecords.length || !String(query || '').trim()) return { block: '', hits: 0, projectChats: projectRecords.length };

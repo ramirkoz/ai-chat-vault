@@ -42,6 +42,7 @@ export async function saveConversation(conversation, extra = {}) {
     key,
     project: extra.project ?? existing?.project ?? '',
     projectName: extra.projectName ?? existing?.projectName ?? '',
+    remoteUpdatedAt: extra.remoteUpdatedAt ?? existing?.remoteUpdatedAt ?? '',
     tags: extra.tags ?? existing?.tags ?? [],
     note: extra.note ?? existing?.note ?? '',
     savedAt: new Date().toISOString(),

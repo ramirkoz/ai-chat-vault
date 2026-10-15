@@ -2,9 +2,15 @@
 // on). In a ChatGPT project it keeps the project synced into the local library,
 // and when the first message of a NEW project chat is sent it puts the most
 // relevant excerpts from earlier project chats in front of it.
+//
+// The user's text must never be lost: the original draft is kept, sending waits
+// until the editor really holds the new text, and if no message appears after
+// sending while the input is empty, the draft is put back (live test 2026-10-15:
+// one of two sends lost the text).
 (() => {
   if (globalThis.__acmMemoryAgent) return;
   globalThis.__acmMemoryAgent = true;
+  document.documentElement.dataset.acmMemoryAgent = 'on';
 
   const projectId = () => location.pathname.match(/\/g\/(g-p-[a-z0-9]+)/i)?.[1] || '';
   const isNewChat = () => !/\/c\/[a-z0-9-]{8,}/i.test(location.pathname);
@@ -18,6 +24,8 @@
     return /send-button|composer-submit|send (message|prompt)|надісл|відправ/i.test(label) ? button : null;
   };
   const findSendButton = () => [...document.querySelectorAll('button')].find((button) => sendButtonFrom(button) === button && !button.disabled && isShown(button)) || null;
+  const userMessages = () => document.querySelectorAll('[data-user-message-bubble="true"], [data-message-author-role="user"]').length;
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   let bypass = false;
   let busy = false;
@@ -39,12 +47,40 @@
     editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
   }
 
-  function send(button) {
+  function notice(text) {
+    const box = document.createElement('div');
+    box.textContent = text;
+    box.setAttribute('role', 'status');
+    box.style.cssText = 'position:fixed;z-index:2147483647;left:50%;bottom:96px;transform:translateX(-50%);max-width:560px;padding:10px 14px;border-radius:10px;background:#7a2e0e;color:#fff;font:13px/1.4 system-ui,sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.25)';
+    document.body.append(box);
+    setTimeout(() => box.remove(), 9000);
+  }
+
+  async function send(button) {
+    // Wait (up to 3 s) until the send button is enabled for the new text.
+    let target = null;
+    for (let i = 0; i < 30 && !target; i += 1) {
+      target = (button && !button.disabled && isShown(button)) ? button : findSendButton();
+      if (!target) await wait(100);
+    }
     bypass = true;
-    const target = button && !button.disabled ? button : findSendButton();
     if (target) target.click();
     else composer()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
-    setTimeout(() => { bypass = false; }, 200);
+    setTimeout(() => { bypass = false; }, 300);
+  }
+
+  // If nothing was sent and the input ended up empty, put the user's text back.
+  async function guardAgainstLoss(draft, messagesBefore, pathBefore) {
+    for (let i = 0; i < 40; i += 1) {
+      await wait(250);
+      if (userMessages() > messagesBefore || location.pathname !== pathBefore) return;
+    }
+    const editor = composer();
+    if (editor && !draftOf(editor)) {
+      setComposerText(editor, draft);
+      injectedFor = ''; // the next send gets the memory again
+      notice('AI Chat Memory Tools: повідомлення не надіслалося, ваш текст повернуто в поле вводу. Надішліть його ще раз. / The message was not sent; your text is back in the input.');
+    }
   }
 
   async function injectThenSend(button) {
@@ -52,24 +88,28 @@
     busy = true;
     const editor = composer();
     const draft = draftOf(editor);
+    const messagesBefore = userMessages();
+    const pathBefore = location.pathname;
+    injectedFor = location.pathname;
     try {
-      injectedFor = location.pathname;
       const response = await chrome.runtime.sendMessage({ type: 'acm-memory-context', draft });
       const block = String(response?.block || '').trim();
       if (block && editor) {
         setComposerText(editor, `${block}\n\n[CURRENT REQUEST]\n${draft}`);
-        // Give the editor a moment to update its state before sending.
-        await new Promise((resolve) => setTimeout(resolve, 60));
+        // The editor applies long text asynchronously; wait until it holds it.
+        for (let i = 0; i < 40 && !draftOf(composer()).includes('[CURRENT REQUEST]'); i += 1) await wait(100);
+        if (!draftOf(composer()).includes('[CURRENT REQUEST]')) setComposerText(composer() || editor, draft);
       }
     } catch (_) {
       // Memory is best effort: the message is sent unchanged.
     } finally {
       busy = false;
-      send(button);
+      await send(button);
+      void guardAgainstLoss(draft, messagesBefore, pathBefore);
     }
   }
 
-  const shouldIntercept = () => !bypass && projectId() && isNewChat() && injectedFor !== location.pathname && draftOf(composer()) && !/\[PROJECT MEMORY:/.test(draftOf(composer()));
+  const shouldIntercept = () => !bypass && !busy && projectId() && isNewChat() && injectedFor !== location.pathname && draftOf(composer()) && !/\[PROJECT MEMORY:/.test(draftOf(composer()));
 
   document.addEventListener('click', (event) => {
     const button = sendButtonFrom(event.target);
