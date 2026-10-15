@@ -445,8 +445,12 @@ export async function readYoutubeTranscriptPanel(maxLength) {
   let lines = readNow();
   if (lines.length < 2) {
     const transcriptPattern = /(show\s+transcript|transcript|показати\s+текст\s+відео|текст\s+відео|стенограм|розшифров|расшифров)/iu;
-    const controls = [...document.querySelectorAll('button, [role="button"], ytd-button-renderer, tp-yt-paper-button')];
-    const target = controls.find((element) => visible(element) && transcriptPattern.test(normalize(`${element.textContent || ''} ${element.getAttribute?.('aria-label') || ''}`)));
+    const label = (element) => normalize(`${element.textContent || ''} ${element.getAttribute?.('aria-label') || ''}`);
+    const controls = [...document.querySelectorAll('button, [role="button"], ytd-button-renderer, tp-yt-paper-button')]
+      .filter((element) => transcriptPattern.test(label(element)) && !/(close|закрити|закрыть)/iu.test(label(element)));
+    // The 2026 "Transcript" button sits in the collapsed description (zero size)
+    // but still opens the panel when clicked.
+    const target = controls.find(visible) || controls[0];
     try { target?.click?.(); } catch {}
 
     const deadline = Date.now() + 6000;
