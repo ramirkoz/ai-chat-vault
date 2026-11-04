@@ -6,7 +6,7 @@ Formerly **GPT Project & Memory Tools** (2.x). Chrome Web Store item: `ingagbhap
 
 ## Current release
 
-**3.0.0** — see [RELEASE_NOTES.md](RELEASE_NOTES.md) and [CHANGELOG.md](CHANGELOG.md).
+**3.1.0** — see [RELEASE_NOTES.md](RELEASE_NOTES.md) and [CHANGELOG.md](CHANGELOG.md).
 
 | Folder | What |
 |---|---|

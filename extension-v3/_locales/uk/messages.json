@@ -1,8 +1,8 @@
 {
   "extensionName": {
-    "message": "AI Chat Vault"
+    "message": "AI Chat Vault: експорт чатів ChatGPT, Claude, Gemini, Grok у PDF"
   },
   "extensionDescription": {
-    "message": "Експорт, пошук і продовження чатів ChatGPT, Claude, Gemini та Grok. Пам’ять проєктів і промпти. Усе лишається у вашому браузері."
+    "message": "Експорт чатів ChatGPT, Claude, Gemini і Grok у PDF чи Markdown. Пошук, промпти, перенесення контексту між ШІ. Усе локально."
   }
 }

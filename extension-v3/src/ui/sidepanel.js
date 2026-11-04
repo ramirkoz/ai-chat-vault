@@ -14,6 +14,7 @@ import { listPrompts, filterPrompts, savePrompt, deletePrompt, importPrompts } f
 import { migratePromptsFromV2 } from '../core/migrate-v2.js';
 import { insertTextInTab, attachImageInTab, deliverToNewChat } from '../core/deliver.js';
 import { prepareSiteJob, isYoutubeVideo } from '../core/site-tools.js';
+import { noteExport, snoozeRating, closeRating, REVIEW_URL } from '../core/rating.js';
 import { t, siteLabels, uiLanguage } from './strings.js';
 
 const $ = (id) => document.getElementById(id);
@@ -341,6 +342,30 @@ async function saveCurrent() {
   setStatus(nodes.status, t('saved'), 'ok');
   await renderLibrary();
 }
+
+// ---------- rating request ----------
+
+async function afterExport() {
+  if (await noteExport().catch(() => false)) $('rating').hidden = false;
+}
+
+$('rating-text').textContent = t('ratingText');
+$('rating-yes').textContent = t('ratingYes');
+$('rating-later').textContent = t('ratingLater');
+$('rating-never').textContent = t('ratingNever');
+$('rating-yes').addEventListener('click', () => {
+  $('rating').hidden = true;
+  closeRating().catch(() => {});
+  chrome.tabs.create({ url: REVIEW_URL }).catch(() => {});
+});
+$('rating-later').addEventListener('click', () => {
+  $('rating').hidden = true;
+  snoozeRating().catch(() => {});
+});
+$('rating-never').addEventListener('click', () => {
+  $('rating').hidden = true;
+  closeRating().catch(() => {});
+});
 
 // ---------- handoff to another assistant ----------
 
@@ -861,7 +886,7 @@ nodes.roleFilter.addEventListener('click', (event) => {
 nodes.messageSearch.addEventListener('input', applyFilters);
 nodes.selectAll.addEventListener('click', () => setAll(true));
 nodes.selectNone.addEventListener('click', () => setAll(false));
-nodes.export.addEventListener('click', guard(nodes.status, exportSelected));
+nodes.export.addEventListener('click', guard(nodes.status, async () => { await exportSelected(); await afterExport(); }));
 nodes.copy.addEventListener('click', guard(nodes.status, copySelected));
 nodes.save.addEventListener('click', guard(nodes.status, saveCurrent));
 
@@ -869,7 +894,7 @@ nodes.search.addEventListener('input', guard(nodes.libraryStatus, renderLibrary)
 nodes.platformFilter.addEventListener('change', guard(nodes.libraryStatus, renderLibrary));
 nodes.folderFilter.addEventListener('change', guard(nodes.libraryStatus, renderLibrary));
 nodes.insertContext.addEventListener('click', guard(nodes.libraryStatus, insertContext));
-nodes.bulkExport.addEventListener('click', guard(nodes.libraryStatus, exportBulk));
+nodes.bulkExport.addEventListener('click', guard(nodes.libraryStatus, async () => { await exportBulk(); await afterExport(); }));
 nodes.bulkClear.addEventListener('click', guard(nodes.libraryStatus, async () => { bulkKeys.clear(); await renderLibrary(); }));
 nodes.backup.addEventListener('click', guard(nodes.libraryStatus, backup));
 nodes.restore.addEventListener('click', () => nodes.restoreFile.click());
