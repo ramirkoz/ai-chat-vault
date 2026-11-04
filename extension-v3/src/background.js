@@ -22,8 +22,10 @@ async function createMenus() {
   chrome.contextMenus.create({ id: `${MENU_ROOT}:youtube`, parentId: MENU_ROOT, title: t('menuYoutube'), contexts: ['page', 'selection'], documentUrlPatterns: YOUTUBE });
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(({ reason }) => {
   createMenus().catch(() => {});
+  // First install only: nothing else tells a new user where the extension lives.
+  if (reason === 'install') chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') }).catch(() => {});
   // An update of the 2.x store item keeps the extension id, so its saved chats
   // and settings can be moved into the 3.0 library.
   migrateFromV2({ setAutoMemory }).catch(() => {});

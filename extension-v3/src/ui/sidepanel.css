@@ -92,3 +92,7 @@ button.small { font-size: 12px; padding: 2px 8px; }
 .pending pre { margin: 0; max-height: 30vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12px/1.4 ui-monospace, Consolas, monospace; }
 .pending img { max-width: 100%; border-radius: 6px; border: 1px solid var(--border); }
 .memory { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--border); padding-top: 8px; }
+
+.rating { margin: 8px 12px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.rating p { margin: 0 0 8px; }
+.rating[hidden] { display: none; }

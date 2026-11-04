@@ -1,16 +1,18 @@
-# Chrome Web Store listing — AI Chat Vault 3.0.0
+# Chrome Web Store listing — AI Chat Vault 3.1.0
 
 Existing item: `ingagbhapppiiiccljbhiledobnmhhfb` (update it, do not create a new item).
 
-## Name
+## Name (comes from the package)
 
-AI Chat Vault
+EN: AI Chat Vault: Export ChatGPT, Claude, Gemini & Grok to PDF, Markdown
+
+UK: AI Chat Vault: експорт чатів ChatGPT, Claude, Gemini, Grok у PDF
 
 ## Summary (≤132 characters, comes from the package)
 
-EN: Export, search and continue ChatGPT, Claude, Gemini and Grok chats. Project memory and prompts. Everything stays in your browser.
+EN: Export ChatGPT, Claude, Gemini and Grok chats to PDF or Markdown. Search, reuse prompts, move context between AIs. Stored locally.
 
-UK: Експорт, пошук і продовження чатів ChatGPT, Claude, Gemini та Grok. Пам’ять проєктів і промпти. Усе лишається у вашому браузері.
+UK: Експорт чатів ChatGPT, Claude, Gemini і Grok у PDF чи Markdown. Пошук, промпти, перенесення контексту між ШІ. Усе локально.
 
 ## Category
 

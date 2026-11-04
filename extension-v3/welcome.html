@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AI Chat Vault</title>
+  <link rel="stylesheet" href="src/ui/sidepanel.css">
+  <style>
+    body { max-width: 620px; margin: 40px auto; padding: 0 20px; font-size: 15px; line-height: 1.5; }
+    h1 { font-size: 24px; margin: 0 0 6px; }
+    .lead { color: var(--muted); margin: 0 0 20px; }
+    ol { padding-left: 22px; margin: 0 0 22px; }
+    li { margin-bottom: 12px; }
+    .sites { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+    .sites a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <img src="icons/icon48.png" width="48" height="48" alt="">
+  <h1 id="title"></h1>
+  <p class="lead" id="lead"></p>
+  <ol>
+    <li id="step1"></li>
+    <li>
+      <span id="step2"></span>
+      <div class="sites">
+        <a href="https://chatgpt.com/" target="_blank" rel="noopener">ChatGPT</a>
+        <a href="https://claude.ai/" target="_blank" rel="noopener">Claude</a>
+        <a href="https://gemini.google.com/" target="_blank" rel="noopener">Gemini</a>
+        <a href="https://grok.com/" target="_blank" rel="noopener">Grok</a>
+      </div>
+    </li>
+    <li id="step3"></li>
+    <li id="step4"></li>
+  </ol>
+  <button id="open" class="primary" type="button"></button>
+  <script type="module" src="src/ui/welcome.js"></script>
+</body>
+</html>

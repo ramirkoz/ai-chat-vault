@@ -1,3 +1,9 @@
+## 3.1.0 — easier to find, easier to start
+
+- New store name and description with the terms people search for: ChatGPT, Claude, Gemini, Grok, PDF, Markdown (English and Ukrainian).
+- Welcome page on first install: four steps to the first export, links to the four sites, a button that opens the side panel. Updates do not open it.
+- Rating request in the side panel after the 5th export. "Later" asks again after 20 more exports, "Do not ask again" and "Rate it" close it for good. The counter is local; nothing leaves the browser.
+
 ## 3.0.0 — AI Chat Vault
 
 - Renamed to **AI Chat Vault**; rewritten as a side-panel extension (`extension-v3/`).
